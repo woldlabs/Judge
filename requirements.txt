@@ -1,0 +1,21 @@
+# Core scientific stack
+numpy>=1.24
+scipy>=1.11
+pandas>=2.0
+scikit-learn>=1.3
+
+# Media & signal processing
+opencv-python>=4.8
+librosa>=0.10
+soundfile>=0.12
+
+# Visualization & GUI
+matplotlib>=3.7
+Pillow>=10.0
+customtkinter>=5.2
+
+# Reporting
+reportlab>=4.0
+
+# Utilities
+tqdm>=4.66
