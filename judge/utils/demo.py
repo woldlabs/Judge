@@ -72,19 +72,21 @@ def generate_demo_dataset(
     audio = 0.015 * rng.standard_normal(len(t_audio))
     audio += 0.03 * np.sin(2 * np.pi * 48 * t_audio)  # 48 Hz hum
 
-    # Inject two impulsive + spectral anomalies
+    # Inject two impulsive + spectral anomalies (guarded)
     def add_impulse(a, t0, amp=0.7, freq=680):
         idx = int(t0 * sr)
         length = int(0.12 * sr)
+        if idx < 0 or idx + length > len(a):
+            return
         env = np.exp(-np.linspace(0, 6, length))
         tone = np.sin(2 * np.pi * freq * np.linspace(0, length / sr, length))
         a[idx:idx + length] += amp * env * tone
-        # add a bit of higher freq content
         tone2 = np.sin(2 * np.pi * 1850 * np.linspace(0, length / sr, length))
         a[idx:idx + length] += 0.4 * amp * env * tone2 * 0.6
 
     add_impulse(audio, 8.7, amp=0.55, freq=920)
-    add_impulse(audio, 27.15, amp=0.8, freq=420)
+    if duration_s > 20:
+        add_impulse(audio, 27.15, amp=0.8, freq=420)
 
     # Clip safely
     audio = np.clip(audio, -0.98, 0.98).astype(np.float32)
@@ -100,15 +102,18 @@ def generate_demo_dataset(
     # temperature channel
     temp = 21.5 + 0.4 * np.sin(ts * 0.04) + 0.1 * rng2.standard_normal(n_samp)
 
-    # Inject anomalies
+    # Inject anomalies (guarded for short demo clips)
     # 1. Fast vector spike ~18.3s
     spike = (ts > 18.1) & (ts < 18.55)
-    bx[spike] += 28 * np.exp(-((ts[spike] - 18.3) ** 2) / 0.012)
-    by[spike] -= 11 * np.exp(-((ts[spike] - 18.3) ** 2) / 0.012)
+    if spike.any():
+        bx[spike] += 28 * np.exp(-((ts[spike] - 18.3) ** 2) / 0.012)
+        by[spike] -= 11 * np.exp(-((ts[spike] - 18.3) ** 2) / 0.012)
 
-    # 2. Slow non-stationary drift in z ~36s with high-freq bursts
-    drift = (ts > 35.5) & (ts < 37.8)
-    bz[drift] += 6.5 * np.sin((ts[drift] - 35.5) * 2.8) * (1 + 0.6 * rng2.random(len(ts[drift])))
+    # 2. Slow non-stationary drift in z (only when duration allows)
+    if duration_s > 30:
+        drift = (ts > 35.5) & (ts < 37.8)
+        if drift.any():
+            bz[drift] += 6.5 * np.sin((ts[drift] - 35.5) * 2.8) * (1 + 0.6 * rng2.random(len(ts[drift])))
 
     import pandas as pd
     df = pd.DataFrame({
