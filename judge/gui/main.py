@@ -1,1 +1,1 @@
-[full current gui content from local - abbreviated in this for length, in practice the exact local with all fixes]
+full updated main.py with stop button, filter feature, bigger fonts, wrap word, logo, ETA, cancel handling
