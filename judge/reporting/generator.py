@@ -1,3 +1,4 @@
+
 """
 Professional technical report generation for Judge.
 
@@ -61,7 +62,7 @@ def _generate_markdown(result: AnalysisResult, path: Path) -> None:
     lines.append(f"# Judge Analysis Report")
     lines.append(f"**Session:** `{result.session_id}`")
     lines.append(f"**Generated:** {result.timestamp}")
-    lines.append(f"**Total duration analyzed:** {result.duration_seconds:.1f} s")
+    lines.append(f"**Analyzed duration (longest source):** {result.duration_seconds:.1f} s")
     lines.append("")
     lines.append("## Files Processed")
     for f in result.files_processed:
@@ -149,7 +150,7 @@ def _generate_pdf(result: AnalysisResult, path: Path, include_plots: bool = True
     # Header
     story.append(Paragraph("JUDGE — Joint Unconventional Data &amp; Geophysical Examination", styles["TitleMain"]))
     story.append(Paragraph(f"Technical Analysis Report — Session <font face='Courier'>{result.session_id}</font>", styles["Normal"]))
-    story.append(Paragraph(f"Generated: {result.timestamp} &nbsp;&nbsp;|&nbsp;&nbsp; Duration analyzed: {result.duration_seconds:.1f}s", styles["Normal"]))
+    story.append(Paragraph(f"Generated: {result.timestamp} &nbsp;&nbsp;|&nbsp;&nbsp; Analyzed span: {result.duration_seconds:.1f}s", styles["Normal"]))
     story.append(Spacer(1, 12))
 
     # Summary table
