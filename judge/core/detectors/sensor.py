@@ -1,3 +1,4 @@
+
 """
 Sensor / time-series anomaly detector.
 
@@ -75,7 +76,7 @@ class SensorAnomalyDetector(BaseDetector):
 
         # Robust scaling per column
         med = np.median(X, axis=0)
-        mad = np.median(np.abs(X - med), axis=0) + 1e-9
+        mad = np.median(np.abs(X - med), axis=0) + 1e-6
         Xz = (X - med) / mad
 
         # Isolation Forest for multivariate outliers
@@ -87,15 +88,18 @@ class SensorAnomalyDetector(BaseDetector):
         )
         iso.fit(Xz)
         scores = -iso.decision_function(Xz)  # higher = more anomalous
+        scores = np.clip(scores, 0, 15.0)
 
         # Also compute rolling MAD on the L2 norm of standardized values
         l2 = np.linalg.norm(Xz, axis=1)
         win = max(5, int(len(l2) * 0.005))
         rolling_med = pd.Series(l2).rolling(win, center=True, min_periods=1).median().values
-        rolling_mad = pd.Series(np.abs(l2 - rolling_med)).rolling(win, center=True, min_periods=1).median().values + 1e-9
+        rolling_mad = pd.Series(np.abs(l2 - rolling_med)).rolling(win, center=True, min_periods=1).median().values + 1e-6
         robust_dev = np.abs(l2 - rolling_med) / rolling_mad
+        robust_dev = np.clip(robust_dev, 0, 20.0)
 
         composite = 0.6 * scores + 0.4 * robust_dev
+        composite = np.clip(composite, 0, 25.0)
 
         thresh = self._threshold(4.2)
         mask = composite > thresh
