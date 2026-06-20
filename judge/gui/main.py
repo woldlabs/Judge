@@ -95,7 +95,7 @@ class JudgeApp(ctk.CTk):
         self.sens_var = ctk.DoubleVar(value=0.50)
         sens_frame = ctk.CTkFrame(top, fg_color="transparent")
         sens_frame.pack(side="left", padx=20)
-        ctk.CTkLabel(sens_frame, text="Sensitivity", font=ctk.CTkFont(size=11)).pack()
+        ctk.CTkLabel(sens_frame, text="Sensitivity  [higher = detect more subtle events]", font=ctk.CTkFont(size=10)).pack()
         self.sens_slider = ctk.CTkSlider(sens_frame, from_=0.1, to=0.95, variable=self.sens_var, width=140)
         self.sens_slider.pack()
         self.sens_label = ctk.CTkLabel(sens_frame, text="0.50", font=ctk.CTkFont(size=11))
@@ -166,18 +166,25 @@ class JudgeApp(ctk.CTk):
         cfg = ctk.CTkFrame(left, fg_color="#22262f")
         cfg.pack(fill="x", padx=10, pady=10)
         ctk.CTkLabel(cfg, text="CONFIGURATION", font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w", padx=8, pady=4)
+
         self.min_dur_var = ctk.DoubleVar(value=0.06)
-        ctk.CTkLabel(cfg, text="Min event duration (s)", font=ctk.CTkFont(size=11)).pack(anchor="w", padx=8)
-        ctk.CTkSlider(cfg, from_=0.02, to=0.8, variable=self.min_dur_var, width=210).pack(padx=8, pady=2)
+        ctk.CTkLabel(cfg, text="Min event duration (s)  [lower = include shorter anomalies]", font=ctk.CTkFont(size=10)).pack(anchor="w", padx=8)
+        self.min_dur_label = ctk.CTkLabel(cfg, text="0.06", font=ctk.CTkFont(size=11))
+        self.min_dur_label.pack(anchor="w", padx=8)
+        ctk.CTkSlider(cfg, from_=0.02, to=0.8, variable=self.min_dur_var, width=210,
+                      command=lambda v: self.min_dur_label.configure(text=f"{float(v):.2f}")).pack(padx=8, pady=2)
 
         self.cross_win_var = ctk.DoubleVar(value=1.8)
-        ctk.CTkLabel(cfg, text="Cross-modal window (s)", font=ctk.CTkFont(size=11)).pack(anchor="w", padx=8, pady=(6,0))
-        ctk.CTkSlider(cfg, from_=0.2, to=6.0, variable=self.cross_win_var, width=210).pack(padx=8, pady=2)
+        ctk.CTkLabel(cfg, text="Cross-modal window (s)  [time tolerance to fuse events across modalities]", font=ctk.CTkFont(size=10)).pack(anchor="w", padx=8, pady=(6,0))
+        self.cross_win_label = ctk.CTkLabel(cfg, text="1.8", font=ctk.CTkFont(size=11))
+        self.cross_win_label.pack(anchor="w", padx=8)
+        ctk.CTkSlider(cfg, from_=0.2, to=6.0, variable=self.cross_win_var, width=210,
+                      command=lambda v: self.cross_win_label.configure(text=f"{float(v):.1f}")).pack(padx=8, pady=2)
 
         # Post-run min score filter (useful for exploring results on large files without re-running)
         filter_frame = ctk.CTkFrame(left, fg_color="#22262f")
         filter_frame.pack(fill="x", padx=10, pady=(4, 10))
-        ctk.CTkLabel(filter_frame, text="Min score filter (post-run)", font=ctk.CTkFont(size=11)).pack(anchor="w", padx=8)
+        ctk.CTkLabel(filter_frame, text="Min score filter (post-run)  [hide lower-scoring events]", font=ctk.CTkFont(size=10)).pack(anchor="w", padx=8)
         self.min_score_var = ctk.DoubleVar(value=0.0)
         min_slider = ctk.CTkSlider(filter_frame, from_=0.0, to=25.0, variable=self.min_score_var, width=210,
                                    command=lambda v: self._apply_min_score_filter())
@@ -906,9 +913,9 @@ class JudgeApp(ctk.CTk):
         if not events:
             return
 
-        times = [e.start_time for e in self.events]
-        scores = [e.score for e in self.events]
-        mods = [e.modality.value for e in self.events]
+        times = [e.start_time for e in events]
+        scores = [e.score for e in events]
+        mods = [e.modality.value for e in events]
 
         colors_map = {"video": "#e63946", "audio": "#457b9d", "sensor": "#2a9d8f"}
         c = [colors_map.get(m, "#555555") for m in mods]
