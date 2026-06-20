@@ -1,3 +1,4 @@
+
 """
 Professional GUI entry point for Judge.
 
@@ -775,7 +776,7 @@ class JudgeApp(ctk.CTk):
 
         # Add legend
         for m, col in color_map.items():
-            self.ax.scatter([], [], c=col, label=m, s=30)
+            self.ax.scatter([], [], c=col, s=30)
         self.ax.legend(loc="upper right", fontsize=8, facecolor="#222")
 
         self.fig.tight_layout()
@@ -905,9 +906,9 @@ class JudgeApp(ctk.CTk):
         if not events:
             return
 
-        times = [e.start_time for e in events]
-        scores = [e.score for e in events]
-        mods = [e.modality.value for e in events]
+        times = [e.start_time for e in self.events]
+        scores = [e.score for e in self.events]
+        mods = [e.modality.value for e in self.events]
 
         colors_map = {"video": "#e63946", "audio": "#457b9d", "sensor": "#2a9d8f"}
         c = [colors_map.get(m, "#555555") for m in mods]
@@ -935,14 +936,6 @@ class JudgeApp(ctk.CTk):
         plt.tight_layout()
         fig.savefig(str(out_path), dpi=160, bbox_inches="tight", facecolor="white")
         plt.close(fig)
-
-    def _apply_min_score_filter(self):
-        if not hasattr(self, "all_events") or not self.all_events:
-            return
-        min_s = self.min_score_var.get()
-        self.min_score_label.configure(text=f"{min_s:.1f}")
-        self.events = [e for e in self.all_events if e.score >= min_s]
-        self._render_event_list()
 
 
 def main():
