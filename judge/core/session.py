@@ -1,1 +1,1 @@
-full session with cancel_event support and checks
+[full with pause support]
