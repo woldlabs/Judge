@@ -1,3 +1,4 @@
+
 """
 Cross-modal fusion and event ranking.
 
@@ -72,7 +73,7 @@ def _merge_cluster(cluster: List[AnomalyEvent], window: float) -> AnomalyEvent:
             start_time=ev.start_time,
             duration=ev.duration,
             score=min(99.0, ev.score * 1.0),
-            peak_score=ev.peak_score,
+            peak_score=min(99.0, ev.peak_score),
             features=dict(ev.features),
             description=ev.description + " (single-modality)",
             file_path=ev.file_path,
