@@ -50,7 +50,7 @@ from judge.core.session import AnalysisSession
 from judge.reporting.generator import generate_report
 from pathlib import Path
 
-sess = AnalysisSession(sensitivity=0.55)
+sess = AnalysisSession(sensitivity=0.50)
 sess.add_directory("/data/night_observation_03")
 res = sess.run()
 generate_report(res, Path("out/report"), format="all")
@@ -58,7 +58,7 @@ generate_report(res, Path("out/report"), format="all")
 
 ## Tips for High-Quality Results
 
-- Start with sensitivity ~0.55–0.7
+- Start with sensitivity ~0.45–0.60 (lower = higher specificity)
 - Use the shortest sensible min-duration for your phenomena of interest
 - Cross-modal window of 1–3 seconds works well for most physical coupling
 - Run on the original highest quality files when possible
