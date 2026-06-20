@@ -1,3 +1,4 @@
+
 """
 Audio anomaly detector.
 
@@ -74,8 +75,9 @@ class AudioAnomalyDetector(BaseDetector):
         # Normalize robustly (median + MAD)
         def robust_z(x: np.ndarray) -> np.ndarray:
             med = np.median(x)
-            mad = np.median(np.abs(x - med)) + 1e-9
-            return (x - med) / mad
+            mad = np.median(np.abs(x - med)) + 1e-6
+            z = (x - med) / mad
+            return np.clip(z, -25.0, 25.0)
 
         z_rms = robust_z(rms)
         z_flux = robust_z(spectral_flux)
@@ -84,6 +86,7 @@ class AudioAnomalyDetector(BaseDetector):
 
         # Composite score tuned for transients
         composite = 0.35 * np.abs(z_rms) + 0.30 * np.abs(z_flux) + 0.15 * np.abs(z_cent) + 0.20 * np.abs(z_onset)
+        composite = np.clip(composite, 0, 25.0)
 
         thresh = self._threshold(6.0)
         mask = composite > thresh
