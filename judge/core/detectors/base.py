@@ -1,3 +1,4 @@
+
 """
 Base classes for anomaly detectors in Judge.
 
@@ -45,13 +46,15 @@ class BaseDetector(ABC):
         **extra,
     ) -> AnomalyEvent:
         import uuid
+        score = float(min(99.0, max(0.0, score)))
+        peak_score = float(min(99.0, max(0.0, peak_score)))
         return AnomalyEvent(
             event_id=str(uuid.uuid4())[:8],
             modality=self.modality,
             start_time=float(start_time),
             duration=float(duration),
-            score=float(score),
-            peak_score=float(peak_score),
+            score=score,
+            peak_score=peak_score,
             features=features,
             description=description,
             file_path=str(file_path),
