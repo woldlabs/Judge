@@ -38,8 +38,8 @@ class JudgeApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("JUDGE — Multimodal Anomaly Detection")
-        self.geometry("1180x760")
-        self.minsize(980, 620)
+        self.geometry("1320x880")
+        self.minsize(1120, 720)
 
         self.session: Optional[AnalysisSession] = None
         self.result: Optional[AnalysisResult] = None
@@ -95,7 +95,7 @@ class JudgeApp(ctk.CTk):
         self.sens_var = ctk.DoubleVar(value=0.50)
         sens_frame = ctk.CTkFrame(top, fg_color="transparent")
         sens_frame.pack(side="left", padx=20)
-        ctk.CTkLabel(sens_frame, text="Sensitivity  [higher = detect more subtle events]", font=ctk.CTkFont(size=10)).pack()
+        ctk.CTkLabel(sens_frame, text="Sensitivity  [higher = detect more subtle events]", font=ctk.CTkFont(size=10), wraplength=160).pack()
         self.sens_slider = ctk.CTkSlider(sens_frame, from_=0.1, to=0.95, variable=self.sens_var, width=140)
         self.sens_slider.pack()
         self.sens_label = ctk.CTkLabel(sens_frame, text="0.50", font=ctk.CTkFont(size=11))
@@ -143,13 +143,13 @@ class JudgeApp(ctk.CTk):
         main.grid_columnconfigure(1, weight=1)
 
         # Left sidebar - files (fixed width sidebar, good for config)
-        left = ctk.CTkFrame(main, width=280, corner_radius=8)
+        left = ctk.CTkFrame(main, width=300, corner_radius=8)
         left.grid(row=0, column=0, sticky="ns", padx=(0, 6), pady=4)
         left.pack_propagate(False)
 
         ctk.CTkLabel(left, text="DATA SOURCES", font=ctk.CTkFont(size=13, weight="bold")).pack(padx=10, pady=(10, 4), anchor="w")
 
-        self.files_container = ctk.CTkScrollableFrame(left, width=260, height=130)
+        self.files_container = ctk.CTkScrollableFrame(left, width=280, height=130)
         self.files_container.pack(padx=10, pady=2, fill="x")
 
         # Buttons stacked vertically for readability (not single row)
@@ -168,25 +168,25 @@ class JudgeApp(ctk.CTk):
         ctk.CTkLabel(cfg, text="CONFIGURATION", font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w", padx=8, pady=4)
 
         self.min_dur_var = ctk.DoubleVar(value=0.06)
-        ctk.CTkLabel(cfg, text="Min event duration (s)  [lower = include shorter anomalies]", font=ctk.CTkFont(size=10)).pack(anchor="w", padx=8)
+        ctk.CTkLabel(cfg, text="Min event duration (s)  [lower = include shorter anomalies]", font=ctk.CTkFont(size=10), wraplength=260).pack(anchor="w", padx=8)
         self.min_dur_label = ctk.CTkLabel(cfg, text="0.06", font=ctk.CTkFont(size=11))
         self.min_dur_label.pack(anchor="w", padx=8)
-        ctk.CTkSlider(cfg, from_=0.02, to=0.8, variable=self.min_dur_var, width=210,
+        ctk.CTkSlider(cfg, from_=0.02, to=0.8, variable=self.min_dur_var, width=230,
                       command=lambda v: self.min_dur_label.configure(text=f"{float(v):.2f}")).pack(padx=8, pady=2)
 
         self.cross_win_var = ctk.DoubleVar(value=1.8)
-        ctk.CTkLabel(cfg, text="Cross-modal window (s)  [time tolerance to fuse events across modalities]", font=ctk.CTkFont(size=10)).pack(anchor="w", padx=8, pady=(6,0))
+        ctk.CTkLabel(cfg, text="Cross-modal window (s)  [time tolerance to fuse events across modalities]", font=ctk.CTkFont(size=10), wraplength=260).pack(anchor="w", padx=8, pady=(6,0))
         self.cross_win_label = ctk.CTkLabel(cfg, text="1.8", font=ctk.CTkFont(size=11))
         self.cross_win_label.pack(anchor="w", padx=8)
-        ctk.CTkSlider(cfg, from_=0.2, to=6.0, variable=self.cross_win_var, width=210,
+        ctk.CTkSlider(cfg, from_=0.2, to=6.0, variable=self.cross_win_var, width=230,
                       command=lambda v: self.cross_win_label.configure(text=f"{float(v):.1f}")).pack(padx=8, pady=2)
 
         # Post-run min score filter (useful for exploring results on large files without re-running)
         filter_frame = ctk.CTkFrame(left, fg_color="#22262f")
         filter_frame.pack(fill="x", padx=10, pady=(4, 10))
-        ctk.CTkLabel(filter_frame, text="Min score filter (post-run)  [hide lower-scoring events]", font=ctk.CTkFont(size=10)).pack(anchor="w", padx=8)
+        ctk.CTkLabel(filter_frame, text="Min score filter (post-run)  [hide lower-scoring events]", font=ctk.CTkFont(size=10), wraplength=260).pack(anchor="w", padx=8)
         self.min_score_var = ctk.DoubleVar(value=0.0)
-        min_slider = ctk.CTkSlider(filter_frame, from_=0.0, to=25.0, variable=self.min_score_var, width=210,
+        min_slider = ctk.CTkSlider(filter_frame, from_=0.0, to=25.0, variable=self.min_score_var, width=230,
                                    command=lambda v: self._apply_min_score_filter())
         min_slider.pack(padx=8, pady=2)
         self.min_score_label = ctk.CTkLabel(filter_frame, text="0.0", font=ctk.CTkFont(size=11))
@@ -460,34 +460,52 @@ class JudgeApp(ctk.CTk):
         if not self._file_paths:
             messagebox.showwarning("No data", "Please add files or a folder first.")
             return
-        self._log("Starting HAIL MARY sweep (sensitivities 0.0 to 1.0 step 0.1)...")
         original_sens = self.sens_var.get()
+        original_dur = self.min_dur_var.get()
+        original_win = self.cross_win_var.get()
+
+        # 10 intelligently chosen settings (using full config space: sens + min_dur + cross_win)
+        # Prioritizes broad coverage for detection: permissive combos for faint/brief anomalies,
+        # plus balanced and some stricter. Guarantees good chance of catching real signals.
+        hm_settings = [
+            (original_sens, original_dur, original_win),  # 1: user's current UI config
+            (0.95, 0.02, 3.5),  # 2: ultra-permissive (max chance for weak/short + loose fusion)
+            (0.85, 0.03, 2.0),  # 3: high sens + short events
+            (0.75, 0.04, 2.5),  # 4: high sens + med fusion
+            (0.65, 0.05, 1.5),  # 5: med-high + shorter
+            (0.55, 0.06, 1.8),  # 6: near-default balanced
+            (0.70, 0.025, 4.0), # 7: high sens + very-brief + wide window
+            (0.40, 0.10, 1.0),  # 8: stricter for strong sustained + tight sync
+            (0.80, 0.05, 5.0),  # 9: high sens + wide cross-modal tolerance
+            (0.60, 0.07, 2.2),  # 10: med sens + slightly longer events
+        ]
+
+        self._log("Starting HAIL MARY sweep (10 smart settings using Sensitivity + Min duration + Cross-window)...")
         all_hm_events = []
-        for s_pct in range(0, 101, 10):
-            s = s_pct / 100.0
-            self.sens_var.set(s)
-            self._log(f"  Hail Mary at sensitivity={s:.1f}")
+        for i, (s, d, w) in enumerate(hm_settings):
+            self._log(f"  Hail Mary {i+1}/10: sens={s:.2f} dur={d:.3f}s win={w:.1f}s")
             sess = AnalysisSession(
                 sensitivity=s,
-                min_event_duration=self.min_dur_var.get(),
-                cross_modal_window=self.cross_win_var.get(),
+                min_event_duration=d,
+                cross_modal_window=w,
             )
             for p in self._file_paths:
                 sess.add_file(p)
             try:
                 res = sess.run()
                 self._log(f"    -> {len(res.events)} events")
+                tag = f"hm_{i+1}"
                 for ev in res.events:
-                    ev.tags = getattr(ev, 'tags', []) + [f"hm_sens_{s_pct}"]
+                    ev.tags = getattr(ev, 'tags', []) + [tag]
                     all_hm_events.append(ev)
             except Exception as e:
                 self._log(f"    error: {e}")
-        self.sens_var.set(original_sens)
+
         self.all_events = all_hm_events
         self.events = all_hm_events
         self._render_event_list()
         self._render_overview_plot()
-        self._log(f"HAIL MARY complete. Total {len(all_hm_events)} events across sweeps.")
+        self._log(f"HAIL MARY complete. Total {len(all_hm_events)} events across 10 settings.")
         self.hail_mary_btn.configure(state="normal")
 
     def _progress_cb(self, msg: str, pct: float):
@@ -783,7 +801,7 @@ class JudgeApp(ctk.CTk):
 
         # Add legend
         for m, col in color_map.items():
-            self.ax.scatter([], [], c=col, s=30)
+            self.ax.scatter([], [], c=col, label=m, s=30)
         self.ax.legend(loc="upper right", fontsize=8, facecolor="#222")
 
         self.fig.tight_layout()
