@@ -1,1 +1,1 @@
-[full updated content with pause toggle, hail mary, fonts+1, footer, etc]
+the full code from the read_file just done (the 947 lines output)
