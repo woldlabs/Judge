@@ -8,7 +8,7 @@ signatures using dense optical flow and frame-level statistics.
 
 from __future__ import annotations
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Callable
 import logging
 
 import cv2
@@ -36,7 +36,7 @@ class VideoAnomalyDetector(BaseDetector):
         self.sample_every = max(1, sample_every)
         self.flow_block_size = flow_block_size
 
-    def detect(self, file_path: Path, metadata: Optional[Dict] = None) -> List[AnomalyEvent]:
+    def detect(self, file_path: Path, metadata: Optional[Dict] = None, progress_callback: Optional[Callable[[str, float], None]] = None) -> List[AnomalyEvent]:
         cap = cv2.VideoCapture(str(file_path))
         if not cap.isOpened():
             logger.error("Failed to open video %s", file_path)
@@ -45,6 +45,11 @@ class VideoAnomalyDetector(BaseDetector):
         fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
         if fps <= 1:
             fps = 30.0
+
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+
+        if progress_callback:
+            self._progress_cb = progress_callback
 
         # Read first frame
         ret, frame = cap.read()
@@ -59,6 +64,7 @@ class VideoAnomalyDetector(BaseDetector):
         delta_intensities: List[float] = []
         edge_densities: List[float] = []
         frame_idx = 0
+        last_report = 0
 
         while True:
             ret, frame = cap.read()
@@ -92,7 +98,15 @@ class VideoAnomalyDetector(BaseDetector):
 
             prev_gray = gray
 
+            # Live sub-progress so large videos don't look frozen
+            if frame_idx - last_report >= 80:
+                local = (frame_idx / total_frames) if total_frames > 10 else (frame_idx / max(1000, frame_idx + 200))
+                self._report_progress(f"optical flow + features (frame {frame_idx})", local)
+                last_report = frame_idx
+
         cap.release()
+
+        self._report_progress("video feature extraction complete", 1.0)
 
         if len(times) < 3:
             return []
