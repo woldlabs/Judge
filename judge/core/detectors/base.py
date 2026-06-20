@@ -8,7 +8,7 @@ well-scored AnomalyEvent objects with rich feature attribution.
 
 from __future__ import annotations
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Callable
 from pathlib import Path
 
 from judge.core.models import AnomalyEvent, Modality
@@ -28,9 +28,17 @@ class BaseDetector(ABC):
         self.sensitivity = max(0.0, min(1.0, sensitivity))
         self.min_duration = max(0.01, min_duration)
         self.params: Dict[str, Any] = dict(kwargs)
+        self._progress_cb: Callable[[str, float], None] = kwargs.get("progress_callback") or (lambda msg, p: None)
+
+    def _report_progress(self, message: str, local_pct: float = 0.0):
+        """Report sub-task progress (0.0-1.0) for live status updates."""
+        try:
+            self._progress_cb(str(message)[:100], max(0.0, min(1.0, float(local_pct))))
+        except Exception:
+            pass
 
     @abstractmethod
-    def detect(self, file_path: Path, metadata: Optional[Dict] = None) -> List[AnomalyEvent]:
+    def detect(self, file_path: Path, metadata: Optional[Dict] = None, progress_callback: Optional[Callable[[str, float], None]] = None) -> List[AnomalyEvent]:
         """Run detection and return list of events sorted by time."""
         ...
 
