@@ -125,11 +125,20 @@ class AnalysisSession:
             pct_base = detector_progress + (idx / max(1, len(files_processed))) * 55
             self._report_progress(f"Analyzing {Path(fpath).name} ({mod.value})", pct_base)
 
+            def _sub_progress(msg: str, loc: float):
+                # Update main bar a bit + provide live activity message
+                adj_pct = min(73.0, pct_base + min(50.0, loc * 50.0))
+                self._report_progress(f"Analyzing {Path(fpath).name}: {msg}", adj_pct)
+
             try:
-                evs = detector.detect(Path(fpath), metadata=meta.__dict__ if meta else None)
+                evs = detector.detect(
+                    Path(fpath),
+                    metadata=meta.__dict__ if meta else None,
+                    progress_callback=_sub_progress
+                )
                 all_events.extend(evs)
                 self._report_progress(
-                    f"Found {len(evs)} events in {Path(fpath).name}", pct_base + 2
+                    f"Found {len(evs)} events in {Path(fpath).name}", pct_base + 52
                 )
             except Exception as e:
                 logger.exception("Detector failed on %s", fpath)
