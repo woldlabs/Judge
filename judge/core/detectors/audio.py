@@ -1,4 +1,3 @@
-
 """
 Audio anomaly detector.
 
@@ -8,7 +7,7 @@ acoustic transients using time-frequency features.
 
 from __future__ import annotations
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Callable
 import logging
 
 import numpy as np
@@ -37,7 +36,11 @@ class AudioAnomalyDetector(BaseDetector):
         self.n_fft = n_fft
         self.hop_length = hop_length
 
-    def detect(self, file_path: Path, metadata: Optional[Dict] = None) -> List[AnomalyEvent]:
+    def detect(self, file_path: Path, metadata: Optional[Dict] = None, progress_callback: Optional[Callable[[str, float], None]] = None) -> List[AnomalyEvent]:
+        if progress_callback:
+            self._progress_cb = progress_callback
+            progress_callback("loading audio waveform", 0.05)
+
         try:
             y, sr = librosa.load(str(file_path), sr=None, mono=True)
         except Exception as e:
@@ -46,6 +49,9 @@ class AudioAnomalyDetector(BaseDetector):
 
         if len(y) < sr * 0.1:
             return []
+
+        if progress_callback:
+            progress_callback("computing spectral features", 0.25)
 
         # Compute key features
         # RMS energy envelope
@@ -103,6 +109,7 @@ class AudioAnomalyDetector(BaseDetector):
                     "onset_peak": float(np.max(onset_env[mask_idx])),
                     "centroid_var": float(np.var(cent[mask_idx])),
                 })
+        self._report_progress("audio analysis complete", 1.0)
         return events
 
     def _group_audio_events(

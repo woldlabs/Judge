@@ -1,4 +1,3 @@
-
 """
 Sensor / time-series anomaly detector.
 
@@ -8,7 +7,7 @@ accelerometers, environmental sensors, etc.
 
 from __future__ import annotations
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Callable
 import logging
 
 import numpy as np
@@ -35,7 +34,11 @@ class SensorAnomalyDetector(BaseDetector):
         super().__init__(sensitivity=sensitivity, min_duration=min_duration, **kwargs)
         self.contamination = contamination
 
-    def detect(self, file_path: Path, metadata: Optional[Dict] = None) -> List[AnomalyEvent]:
+    def detect(self, file_path: Path, metadata: Optional[Dict] = None, progress_callback: Optional[Callable[[str, float], None]] = None) -> List[AnomalyEvent]:
+        if progress_callback:
+            self._progress_cb = progress_callback
+            progress_callback("loading sensor data", 0.1)
+
         try:
             if file_path.suffix.lower() == ".csv":
                 df = pd.read_csv(file_path)
@@ -50,6 +53,9 @@ class SensorAnomalyDetector(BaseDetector):
         except Exception as e:
             logger.error("Failed to load sensor data %s: %s", file_path, e)
             return []
+
+        if progress_callback:
+            progress_callback("multivariate outlier detection", 0.4)
 
         # Identify time column
         time_col = None
@@ -118,6 +124,7 @@ class SensorAnomalyDetector(BaseDetector):
                     vals = Xz[mask_idx, ci]
                     if len(vals):
                         ev.features[f"peak_z_{col}"] = float(np.max(np.abs(vals)))
+        self._report_progress("sensor analysis complete", 1.0)
         return events
 
     def _group_sensor_events(
@@ -159,7 +166,7 @@ class SensorAnomalyDetector(BaseDetector):
             desc = (
                 f"Multivariate sensor excursion (IsolationForest + rolling MAD). "
                 f"peak_score={peak:.2f}, duration={dur:.3f}s. "
-                f"Channels: {', '.join(channel_names[:4])}{'...' if len(channel_names) > 4 else ''}"
+                f"Channels: {", ".join(channel_names[:4])}{'...' if len(channel_names) > 4 else ''}"
             )
 
             ev = self._make_event(
