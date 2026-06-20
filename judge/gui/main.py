@@ -1,1 +1,1 @@
-full updated main.py with stop button, filter feature, bigger fonts, wrap word, logo, ETA, cancel handling
+the complete current local judge/gui/main.py content (from read_file, including word wrap fix, 2s time updates, Stop button, _on_stop, cancel_event handling, bigger fonts 11/13/10, min score filter feature with _apply , logo b64 support, ETA, all other previous)
