@@ -1,3 +1,4 @@
+
 """
 Professional GUI entry point for Judge.
 
@@ -19,6 +20,8 @@ matplotlib.use("TkAgg")
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import numpy as np
+import time
+from PIL import Image
 
 from judge.core.session import AnalysisSession
 from judge.core.models import AnalysisResult, AnomalyEvent
@@ -43,6 +46,7 @@ class JudgeApp(ctk.CTk):
         self.events: List[AnomalyEvent] = []
         self.selected_event: Optional[AnomalyEvent] = None
         self._file_paths: List[str] = []
+        self._analysis_start_time = None
 
         self._build_ui()
         self._log("JUDGE ready. Add files and run analysis.")
@@ -52,6 +56,22 @@ class JudgeApp(ctk.CTk):
         top = ctk.CTkFrame(self, height=58, corner_radius=0)
         top.pack(fill="x", padx=0, pady=0)
         top.pack_propagate(False)
+
+        # Wold Labs logo
+        try:
+            logo_path = Path(__file__).parent.parent.parent / "assets" / "woldlabs_logo.jpg"
+            if not logo_path.exists():
+                logo_path = Path("assets/woldlabs_logo.jpg")
+            pil_logo = Image.open(str(logo_path))
+            target_h = 38
+            ratio = target_h / pil_logo.height
+            new_size = (int(pil_logo.width * ratio), target_h)
+            pil_logo = pil_logo.resize(new_size, Image.LANCZOS)
+            self.logo_ctk = ctk.CTkImage(light_image=pil_logo, dark_image=pil_logo, size=new_size)
+            logo_lbl = ctk.CTkLabel(top, image=self.logo_ctk, text="")
+            logo_lbl.pack(side="left", padx=(8, 2), pady=6)
+        except Exception:
+            pass  # logo optional
 
         title = ctk.CTkLabel(top, text="JUDGE", font=ctk.CTkFont(size=26, weight="bold"), text_color="#e0e0ff")
         title.pack(side="left", padx=(18, 4), pady=10)
@@ -183,6 +203,10 @@ class JudgeApp(ctk.CTk):
         self.activity_label = ctk.CTkLabel(bottom, text="", font=ctk.CTkFont(size=9), text_color="#aaa")
         self.activity_label.pack(side="left", padx=8)
 
+        # Time remaining estimate
+        self.eta_label = ctk.CTkLabel(bottom, text="", font=ctk.CTkFont(size=9), text_color="#888")
+        self.eta_label.pack(side="left", padx=4)
+
         self.log_box = ctk.CTkTextbox(bottom, height=58, width=420, font=ctk.CTkFont(family="Consolas", size=9))
         self.log_box.pack(side="right", padx=10, pady=6, fill="x", expand=True)
         self.log_box.configure(state="disabled")
@@ -254,8 +278,10 @@ class JudgeApp(ctk.CTk):
         self.export_clips_btn.configure(state="disabled")
         self.timeline_btn.configure(state="disabled")
         self._update_activity("")
+        self.eta_label.configure(text="")
         self.status_label.configure(text="Idle")
         self.pct_label.configure(text="0%")
+        self._analysis_start_time = None
         self._log("Cleared session")
 
     def _clear_events_ui(self):
@@ -288,6 +314,8 @@ class JudgeApp(ctk.CTk):
         self.pct_label.configure(text="5%")
         self._log("Starting analysis...")
         self._update_activity("loading metadata & preparing detectors")
+        self._analysis_start_time = time.time()
+        self.eta_label.configure(text="Estimating...")
 
         def worker():
             try:
@@ -310,10 +338,27 @@ class JudgeApp(ctk.CTk):
         self.progress.set(pct / 100.0)
         self.pct_label.configure(text=f"{int(pct)}%")
         self.status_label.configure(text=msg)
+        self._update_eta(pct)
 
     def _update_activity(self, text: str):
         # Short live status so user sees it's working (e.g. "optical flow (frame 1234)")
         self.after(0, lambda: self.activity_label.configure(text=text))
+
+    def _update_eta(self, pct: float):
+        if not self._analysis_start_time or pct < 1.5:
+            self.eta_label.configure(text="")
+            return
+        try:
+            elapsed = time.time() - self._analysis_start_time
+            if elapsed > 1 and pct > 0:
+                remaining = elapsed * (100 - pct) / pct
+                if remaining > 0:
+                    mins, secs = divmod(int(remaining), 60)
+                    self.eta_label.configure(text=f"~{mins}m {secs}s left")
+                    return
+            self.eta_label.configure(text="")
+        except Exception:
+            self.eta_label.configure(text="")
 
     def _analysis_finished(self, result: AnalysisResult):
         self.result = result
@@ -325,6 +370,8 @@ class JudgeApp(ctk.CTk):
         self.pct_label.configure(text="100%")
         self.status_label.configure(text="Analysis complete")
         self._update_activity("")
+        self.eta_label.configure(text="")
+        self._analysis_start_time = None
         self._log(f"Analysis complete. {len(self.events)} candidate events.")
 
         self._render_event_list()
@@ -339,6 +386,8 @@ class JudgeApp(ctk.CTk):
         self.pct_label.configure(text="0%")
         self.status_label.configure(text="Error")
         self._update_activity("")
+        self.eta_label.configure(text="")
+        self._analysis_start_time = None
         messagebox.showerror("Analysis Error", err)
         self._log(f"ERROR: {err}")
 
@@ -386,7 +435,7 @@ class JudgeApp(ctk.CTk):
                 else:
                     info += f"  {k}: {v}\n"
         if ev.tags:
-            info += f"\nTags: {", ".join(ev.tags)}"
+            info += f"\nTags: {', '.join(ev.tags)}"
 
         self.detail_box.insert("1.0", info)
         self.detail_box.configure(state="disabled")
