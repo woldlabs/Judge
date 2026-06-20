@@ -1,3 +1,4 @@
+
 """
 AnalysisSession orchestrates ingestion, detection, fusion, and result assembly.
 """
@@ -27,7 +28,7 @@ class AnalysisSession:
     High level entry point.
 
     Example:
-        session = AnalysisSession(sensitivity=0.65)
+        session = AnalysisSession(sensitivity=0.5)
         session.add_file("drone_night.mp4")
         session.add_file("mic_omni.wav")
         results = session.run()
@@ -35,8 +36,8 @@ class AnalysisSession:
 
     def __init__(
         self,
-        sensitivity: float = 0.65,
-        min_event_duration: float = 0.05,
+        sensitivity: float = 0.50,
+        min_event_duration: float = 0.06,
         cross_modal_window: float = 1.8,
         progress_callback: Optional[Callable[[str, float], None]] = None,
     ):
@@ -160,7 +161,7 @@ class AnalysisSession:
                 "min_event_duration": self.min_event_duration,
                 "cross_modal_window": self.cross_modal_window,
             },
-            duration_seconds=sum(m.duration for m in self.metadata.values()),
+            duration_seconds=max((m.duration for m in self.metadata.values()), default=0.0),
         )
 
         self._report_progress("Analysis complete.", 100)
