@@ -1,3 +1,4 @@
+
 """
 End-to-end demo using generated synthetic data.
 
@@ -16,7 +17,7 @@ def main():
     print("Dataset:", files)
 
     print("\nInitializing Judge session...")
-    session = AnalysisSession(sensitivity=0.6, min_event_duration=0.04, cross_modal_window=1.6)
+    session = AnalysisSession(sensitivity=0.5, min_event_duration=0.06, cross_modal_window=1.6)
 
     session.add_file(files["video"])
     session.add_file(files["audio"])
