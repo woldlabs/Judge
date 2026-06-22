@@ -48,6 +48,12 @@ class JudgeApp(ctk.CTk):
         self._file_paths: List[str] = []
         self._analysis_start_time = None
         self.cancel_event = None
+        self._preview_img = None
+        self._preview_images = []  # keep refs for safe image cycling in main preview
+        self._slide_img = None
+        self._slide_images = []
+        self._slide_win = None
+        self._slide_resize_debounce = None
 
         self._build_ui()
         self._log("JUDGE ready. Add files and run analysis.")
@@ -676,8 +682,8 @@ class JudgeApp(ctk.CTk):
         self._load_event_preview(ev)
 
     def _load_event_preview(self, ev: AnomalyEvent):
-        self.preview_label.configure(image=None, text="Loading preview...")
-        self._preview_img = None
+        self.preview_label.configure(text="Loading preview...")
+        # Avoid early image=None + ref drop to prevent "pyimage doesn't exist" on repeated selections
         if ev.modality.value != "video":
             self.preview_label.configure(text=f"No image preview for {ev.modality.value}")
             return
@@ -697,7 +703,7 @@ class JudgeApp(ctk.CTk):
             if not ret or frame is None:
                 self.preview_label.configure(text="Frame not found")
                 return
-            # resize to small preview size
+            # resize to small preview size (in right panel)
             h, w = frame.shape[:2]
             target_w = 160
             scale = target_w / float(w)
@@ -709,6 +715,7 @@ class JudgeApp(ctk.CTk):
             frame = cv2.resize(frame, (target_w, new_h))
             img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
             ctk_img = ctk.CTkImage(light_image=img, dark_image=img, size=(target_w, new_h))
+            self._preview_images.append(ctk_img)  # prevent GC
             self.preview_label.configure(image=ctk_img, text="")
             self._preview_img = ctk_img
         except Exception as e:
@@ -732,8 +739,10 @@ class JudgeApp(ctk.CTk):
         self.slide_preview = ctk.CTkLabel(win, text="", fg_color="#2a2d36")
         self.slide_preview.pack(pady=6, fill="both", expand=True)
         self._slide_img = None
+        self._slide_images = []  # IMPORTANT: keep ALL CTkImage instances alive to prevent Tk "pyimageX doesn't exist" on GC for previous slides
+        self._slide_win = win
 
-        # Support expanding/maximizing the preview image on window resize
+        # Support expanding/maximizing the preview image on window resize (debounced to avoid excessive reloads)
         self._slide_resize_debounce = None
         def _debounce_resize(event):
             if self._slide_resize_debounce is not None:
@@ -758,11 +767,15 @@ class JudgeApp(ctk.CTk):
                     self.after_cancel(self._slide_resize_debounce)
             except Exception:
                 pass
+            # allow GC of this slidedeck's images when closed
+            self._slide_images = []
             win.destroy()
 
         ctk.CTkButton(nav_frame, text="Close", width=80, command=_on_slidedeck_close).pack(side="left", padx=20)
 
-        self._update_slide()
+        # Let layout settle then load (ensures winfo sizes are accurate for large/expandable images)
+        win.update_idletasks()
+        self.after(80, self._update_slide)
 
     def _update_slide(self):
         if not self._slide_events:
@@ -787,19 +800,27 @@ class JudgeApp(ctk.CTk):
                 ret, frame = cap.read()
                 cap.release()
                 if ret and frame is not None:
-                    # Dynamic size: use current preview widget size if available (enables expand on resize/maximize)
+                    # Dynamic/expandable size: prefer toplevel geometry (more reliable than label winfo during layout)
+                    # Reserve space for info text + nav buttons + margins. This makes the photo grow when you resize/maximize the slidedeck.
                     try:
-                        pw = max(200, self.slide_preview.winfo_width())
-                        ph = max(150, self.slide_preview.winfo_height())
+                        if hasattr(self, '_slide_win') and self._slide_win and self._slide_win.winfo_exists():
+                            tw = self._slide_win.winfo_width() or 900
+                            th = self._slide_win.winfo_height() or 650
+                            pw = max(480, tw - 80)
+                            ph = max(320, th - 170)
+                        else:
+                            pw = max(400, self.slide_preview.winfo_width() or 640)
+                            ph = max(280, self.slide_preview.winfo_height() or 360)
                     except Exception:
                         pw, ph = 640, 360
                     h, w = frame.shape[:2]
                     scale = min(pw / max(1, float(w)), ph / max(1, float(h)))
-                    nw = max(160, int(w * scale))
-                    nh = max(120, int(h * scale))
+                    nw = max(200, int(w * scale))
+                    nh = max(150, int(h * scale))
                     frame = cv2.resize(frame, (nw, nh))
                     img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
                     ctkimg = ctk.CTkImage(light_image=img, dark_image=img, size=(nw, nh))
+                    self._slide_images.append(ctkimg)  # keep ref to avoid pyimage GC errors on later slides
                     self.slide_preview.configure(image=ctkimg, text="")
                     self._slide_img = ctkimg
                 else:

@@ -90,7 +90,8 @@ generate_report(results, output_path="reports/observation_night_01.pdf", format=
 3. **Analysis Execution** — Real-time progress with per-file logging and cancellation support.
 4. **Event Explorer** — Filterable, sortable table of all candidate events. Selection updates synchronized visualizations.
 5. **Visualization Canvas** — Overview timeline + modality-specific plots (waveform + spectrogram for audio, frame-difference / flow magnitude trace for video, multi-trace sensor).
-6. **Action Bar** — Export full report, export selected events (CSV/JSON), batch-export evidence clips.
+6. **Action Bar** — Run analysis; Export Report (PDF/MD/JSON); Export Clips (evidence videos/audio/sensor slices, with shape bbox overlays on video); Export Timeline (annotated PNG); Export Shapes (CSV catalog of detected object geometries for cross-mission analysis); Stop; Hail Mary (smart preset configs).
+7. **Slidedeck** — Dedicated resizable window for browsing event stills (video). Images are dynamically sized/expandable (auto-scale to window size on load/resize); supports maximize/expand of the photo view.
 
 ## Report Contents
 
