@@ -38,8 +38,8 @@ class JudgeApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("JUDGE — Multimodal Anomaly Detection")
-        self.geometry("1320x880")
-        self.minsize(1120, 720)
+        self.geometry("1550x920")
+        self.minsize(1280, 800)
 
         self.session: Optional[AnalysisSession] = None
         self.result: Optional[AnalysisResult] = None
@@ -720,18 +720,29 @@ class JudgeApp(ctk.CTk):
             return
         win = ctk.CTkToplevel(self)
         win.title("Event Slidedeck")
-        win.geometry("620x520")
-        win.resizable(False, False)
+        win.geometry("960x680")
+        win.resizable(True, True)
 
         self._slide_index = 0
         self._slide_events = sorted(self.events, key=lambda e: e.start_time)
 
-        self.slide_info = ctk.CTkLabel(win, text="", font=ctk.CTkFont(size=11), wraplength=580, justify="left")
+        self.slide_info = ctk.CTkLabel(win, text="", font=ctk.CTkFont(size=11), wraplength=900, justify="left")
         self.slide_info.pack(pady=8, padx=10)
 
-        self.slide_preview = ctk.CTkLabel(win, text="", width=320, height=180, fg_color="#2a2d36")
-        self.slide_preview.pack(pady=6)
+        self.slide_preview = ctk.CTkLabel(win, text="", fg_color="#2a2d36")
+        self.slide_preview.pack(pady=6, fill="both", expand=True)
         self._slide_img = None
+
+        # Support expanding/maximizing the preview image on window resize
+        self._slide_resize_debounce = None
+        def _debounce_resize(event):
+            if self._slide_resize_debounce is not None:
+                try:
+                    self.after_cancel(self._slide_resize_debounce)
+                except Exception:
+                    pass
+            self._slide_resize_debounce = self.after(180, self._reload_current_slide_image)
+        self.slide_preview.bind("<Configure>", _debounce_resize)
 
         nav_frame = ctk.CTkFrame(win)
         nav_frame.pack(pady=10)
@@ -741,7 +752,15 @@ class JudgeApp(ctk.CTk):
         self.slide_pos_label.pack(side="left", padx=10)
         ctk.CTkButton(nav_frame, text="Next ▶", width=80, command=self._next_slide).pack(side="left", padx=5)
 
-        ctk.CTkButton(nav_frame, text="Close", width=80, command=win.destroy).pack(side="left", padx=20)
+        def _on_slidedeck_close():
+            try:
+                if getattr(self, "_slide_resize_debounce", None):
+                    self.after_cancel(self._slide_resize_debounce)
+            except Exception:
+                pass
+            win.destroy()
+
+        ctk.CTkButton(nav_frame, text="Close", width=80, command=_on_slidedeck_close).pack(side="left", padx=20)
 
         self._update_slide()
 
@@ -754,8 +773,8 @@ class JudgeApp(ctk.CTk):
         info_text = f"[{ev.modality.value.upper()}]  {ev.pretty_time()}  +{ev.duration*1000:.0f}ms   score={ev.score:.2f}\n{ev.description}\nFile: {Path(ev.file_path).name}"
         self.slide_info.configure(text=info_text)
 
-        self.slide_preview.configure(image=None, text="Loading frame...")
-        self._slide_img = None
+        self.slide_preview.configure(text="Loading frame...")
+        # Do not null the image ref here to avoid "image not found" / Tcl errors on subsequent slides
 
         if ev.modality.value == "video":
             try:
@@ -767,18 +786,41 @@ class JudgeApp(ctk.CTk):
                 cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, pos))
                 ret, frame = cap.read()
                 cap.release()
-                if ret:
-                    frame = cv2.resize(frame, (320, 180))
+                if ret and frame is not None:
+                    # Dynamic size: use current preview widget size if available (enables expand on resize/maximize)
+                    try:
+                        pw = max(200, self.slide_preview.winfo_width())
+                        ph = max(150, self.slide_preview.winfo_height())
+                    except Exception:
+                        pw, ph = 640, 360
+                    h, w = frame.shape[:2]
+                    scale = min(pw / max(1, float(w)), ph / max(1, float(h)))
+                    nw = max(160, int(w * scale))
+                    nh = max(120, int(h * scale))
+                    frame = cv2.resize(frame, (nw, nh))
                     img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-                    ctkimg = ctk.CTkImage(light_image=img, dark_image=img, size=(320, 180))
+                    ctkimg = ctk.CTkImage(light_image=img, dark_image=img, size=(nw, nh))
                     self.slide_preview.configure(image=ctkimg, text="")
                     self._slide_img = ctkimg
                 else:
                     self.slide_preview.configure(text="Frame unavailable")
+                    self._slide_img = None
             except Exception as e:
                 self.slide_preview.configure(text=f"Error: {str(e)[:50]}")
+                self._slide_img = None
         else:
             self.slide_preview.configure(text=f"No frame preview for {ev.modality.value}")
+            self._slide_img = None
+
+    def _reload_current_slide_image(self):
+        """Debounced reload of current slide (used for resize to allow photo to expand)."""
+        self._slide_resize_debounce = None
+        if getattr(self, "_slide_events", None) and getattr(self, "slide_preview", None):
+            try:
+                if self.slide_preview.winfo_exists():
+                    self._update_slide()
+            except Exception:
+                pass  # window may have been closed during debounce
 
     def _prev_slide(self):
         if self._slide_index > 0:
