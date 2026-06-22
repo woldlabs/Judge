@@ -13,9 +13,10 @@ Designed for researchers, field investigators, and data scientists working with 
   - Sensor: robust multivariate outlier detection (Isolation Forest + rolling MAD), CUSUM-style change-point detection, and cross-channel decorrelation events.
 - **Cross-Modal Fusion**: Temporal correlation engine that surfaces co-occurring or causally plausible events across modalities with composite anomaly scores.
 - **High-Precision Event Localization**: Sub-second (and frame-accurate for video) timestamping with quantitative metrics and human-readable technical descriptions.
+- **Object Shape Capture** (new): For video anomalies, automatically extracts bounding boxes, area, aspect ratio and classifies rough shape (point-like / blob / streak) of motion regions. Shapes saved in JSON, reports, and exportable catalog CSV. Annotated clips include overlaid shapes.
 - **Interactive Analysis GUI**: Dark-themed professional desktop interface featuring synchronized timeline visualization, per-modality spectrograms/heatmaps, clickable anomaly catalog, and live parameter tuning.
 - **Automated Reporting**: Generates comprehensive, publication-quality technical reports (PDF + Markdown + structured JSON) containing statistical summaries, annotated figures, candidate classifications, and exportable evidence packages.
-- **Evidence Extraction**: One-click export of short video/audio clips and sensor windows centered on detected events for downstream forensic or ML analysis.
+- **Evidence Extraction**: One-click export of short video/audio clips and sensor windows centered on detected events for downstream forensic or ML analysis. Video clips now include overlaid shape bounding boxes when available. Dedicated "Export Shapes" produces CSV catalog of object geometries for mission data correlation.
 - **Reproducible & Extensible**: Deterministic processing with seeded RNG where applicable. Clean plugin architecture for additional detectors.
 
 ## Target Use Cases
@@ -100,6 +101,7 @@ Technical reports include:
 - Ranked list of anomalous events with:
   - Precise timecodes (HH:MM:SS.fff / frame number)
   - Quantitative scores and contributing features
+  - Shape descriptions + geometry (bbox/area/aspect) for visual objects (video)
   - Candidate phenomenological classification with confidence rationale
   - Embedded thumbnail / waveform excerpt
 - Cross-modal coincidence matrix

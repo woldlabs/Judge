@@ -10,7 +10,7 @@ from dataclasses import dataclass, field, asdict
 from enum import Enum
 from typing import Any, Dict, List, Optional
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class Modality(str, Enum):
@@ -21,7 +21,10 @@ class Modality(str, Enum):
 
 @dataclass(frozen=True)
 class AnomalyEvent:
-    """Single detected anomalous event with quantitative attribution."""
+    """Single detected anomalous event with quantitative attribution.
+    For video events, shape_description and geometry capture detected object
+    shapes / bounding regions (e.g. bbox, area, aspect) for forensic analysis.
+    """
     event_id: str
     modality: Modality
     start_time: float  # seconds from file/session origin
@@ -35,6 +38,8 @@ class AnomalyEvent:
     frame_end: Optional[int] = None
     channel: Optional[str] = None      # for multi-channel sensor/audio
     tags: List[str] = field(default_factory=list)
+    shape_description: Optional[str] = None  # human description of detected object shape
+    geometry: Optional[Dict[str, Any]] = None  # e.g. {"bbox": [x,y,w,h], "area":.., "aspect_ratio":.., "centroid": [cx,cy]}
 
     @property
     def end_time(self) -> float:
@@ -57,7 +62,7 @@ class AnomalyEvent:
 class AnalysisResult:
     """Complete results for a single analysis run."""
     session_id: str
-    timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))
     files_processed: List[str] = field(default_factory=list)
     events: List[AnomalyEvent] = field(default_factory=list)
     modality_stats: Dict[str, Dict[str, Any]] = field(default_factory=dict)

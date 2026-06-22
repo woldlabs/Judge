@@ -7,7 +7,7 @@ and produces composite evidence scores.
 """
 
 from __future__ import annotations
-from typing import List, Dict
+from typing import List, Dict, Any, Optional
 from collections import defaultdict
 
 from judge.core.models import AnomalyEvent, Modality
@@ -81,6 +81,8 @@ def _merge_cluster(cluster: List[AnomalyEvent], window: float) -> AnomalyEvent:
             frame_end=ev.frame_end,
             channel=ev.channel,
             tags=ev.tags + ["single"],
+            shape_description=ev.shape_description,
+            geometry=dict(ev.geometry) if ev.geometry else None,
         )
         return boosted
 
@@ -117,4 +119,6 @@ def _merge_cluster(cluster: List[AnomalyEvent], window: float) -> AnomalyEvent:
         frame_end=primary.frame_end,
         channel=primary.channel,
         tags=list(set(primary.tags + tags)),
+        shape_description=primary.shape_description,
+        geometry=dict(primary.geometry) if primary.geometry else None,
     )

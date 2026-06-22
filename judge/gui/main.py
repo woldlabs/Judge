@@ -123,6 +123,10 @@ class JudgeApp(ctk.CTk):
                                           command=self._on_export_timeline, state="disabled")
         self.timeline_btn.pack(side="left", padx=4)
 
+        self.shapes_btn = ctk.CTkButton(btn_frame, text="Export Shapes", width=108, height=36,
+                                        command=self._on_export_shapes_catalog, state="disabled")
+        self.shapes_btn.pack(side="left", padx=4)
+
         self.stop_btn = ctk.CTkButton(btn_frame, text="⏹ Stop", width=70, height=36,
                                       fg_color="#c0392b", hover_color="#e74c3c",
                                       command=self._on_stop_analysis, state="disabled")
@@ -343,6 +347,8 @@ class JudgeApp(ctk.CTk):
         self.report_btn.configure(state="disabled")
         self.export_clips_btn.configure(state="disabled")
         self.timeline_btn.configure(state="disabled")
+        if hasattr(self, 'shapes_btn'):
+            self.shapes_btn.configure(state="disabled")
         self.stop_btn.configure(state="disabled")
         self.slidedeck_btn.configure(state="disabled")
         self.hail_mary_btn.configure(state="disabled")
@@ -565,6 +571,7 @@ class JudgeApp(ctk.CTk):
         self.report_btn.configure(state="normal")
         self.export_clips_btn.configure(state="normal" if self.events else "disabled")
         self.timeline_btn.configure(state="normal" if self.events else "disabled")
+        self.shapes_btn.configure(state="normal" if self.events else "disabled")
         self.stop_btn.configure(state="disabled")
         self.slidedeck_btn.configure(state="normal" if self.events else "disabled")
         self.hail_mary_btn.configure(state="normal" if self.events else "disabled")
@@ -573,6 +580,8 @@ class JudgeApp(ctk.CTk):
         self.run_btn.configure(state="normal", text="▶ RUN ANALYSIS", command=self._on_run_analysis)
         self.slidedeck_btn.configure(state="disabled")
         self.hail_mary_btn.configure(state="disabled")
+        if hasattr(self, 'shapes_btn'):
+            self.shapes_btn.configure(state="disabled")
         self.progress.set(0)
         self.pct_label.configure(text="0%")
         self.status_label.configure(text="Error")
@@ -650,6 +659,10 @@ class JudgeApp(ctk.CTk):
                     info += f"  {k}: {v:.4g}\n"
                 else:
                     info += f"  {k}: {v}\n"
+        if ev.shape_description:
+            info += f"\nShape: {ev.shape_description}\n"
+        if ev.geometry:
+            info += f"Geometry: {ev.geometry}\n"
         if ev.tags:
             info += f"\nTags: {', '.join(ev.tags)}"
 
@@ -851,7 +864,7 @@ class JudgeApp(ctk.CTk):
         messagebox.showinfo("Clips Exported", f"Exported {exported} clips to\n{outdir}")
 
     def _export_single_clip(self, ev: AnomalyEvent, outdir: Path):
-        """Export a short window around the event (video or audio)."""
+        """Export a short window around the event (video or audio). For video, overlays detected shape bbox when available."""
         import soundfile as sf
         p = Path(ev.file_path)
         start = max(0.0, ev.start_time - 0.6)
@@ -869,10 +882,21 @@ class JudgeApp(ctk.CTk):
 
             cap.set(cv2.CAP_PROP_POS_FRAMES, int(start * fps))
             target_frames = int(dur * fps)
+            bbox = None
+            if ev.geometry and isinstance(ev.geometry, dict):
+                bb = ev.geometry.get("bbox")
+                if isinstance(bb, (list, tuple)) and len(bb) == 4:
+                    bbox = [int(v) for v in bb]
             for _ in range(target_frames):
                 ret, frame = cap.read()
                 if not ret:
                     break
+                if bbox:
+                    x, y, bw, bh = bbox
+                    # Draw rectangle + label on frame
+                    cv2.rectangle(frame, (x, y), (x + bw, y + bh), (0, 255, 255), 2)
+                    label = ev.shape_description[:30] if ev.shape_description else "anomaly"
+                    cv2.putText(frame, label, (x, max(12, y - 4)), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 255), 1)
                 writer.write(frame)
             writer.release()
             cap.release()
@@ -921,6 +945,56 @@ class JudgeApp(ctk.CTk):
             messagebox.showinfo("Timeline Exported", f"Saved to:\n{path}")
         except Exception as e:
             messagebox.showerror("Timeline Error", str(e))
+
+    def _on_export_shapes_catalog(self):
+        """Export a CSV catalog of all detected object shapes / descriptions (mission-critical for post-analysis correlation)."""
+        if not self.result or not self.events:
+            return
+        path = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            filetypes=[("CSV", "*.csv")],
+            title="Export shapes catalog CSV",
+        )
+        if not path:
+            return
+        try:
+            import csv
+            p = Path(path)
+            video_events = [e for e in self.events if e.modality.value == "video"]
+            with open(p, "w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    "event_id", "time", "score", "duration_ms", "shape_description",
+                    "bbox_x", "bbox_y", "bbox_w", "bbox_h", "area", "aspect_ratio", "centroid_x", "centroid_y",
+                    "file"
+                ])
+                for ev in sorted(video_events, key=lambda e: -e.score):
+                    geom = ev.geometry or {}
+                    bbox = geom.get("bbox", [None]*4) if isinstance(geom, dict) else [None]*4
+                    if not isinstance(bbox, (list, tuple)):
+                        bbox = [None]*4
+                    while len(bbox) < 4: bbox.append(None)
+                    cx, cy = (None, None)
+                    if isinstance(geom, dict):
+                        c = geom.get("centroid", [None, None])
+                        if isinstance(c, (list, tuple)) and len(c) >= 2:
+                            cx, cy = c[0], c[1]
+                    writer.writerow([
+                        ev.event_id,
+                        ev.pretty_time(),
+                        round(ev.score, 3),
+                        round(ev.duration * 1000, 1),
+                        ev.shape_description or "",
+                        bbox[0], bbox[1], bbox[2], bbox[3],
+                        geom.get("area") if isinstance(geom, dict) else None,
+                        geom.get("aspect_ratio") if isinstance(geom, dict) else None,
+                        cx, cy,
+                        Path(ev.file_path).name,
+                    ])
+            self._log(f"Shapes catalog exported: {p}")
+            messagebox.showinfo("Shapes Exported", f"Catalog saved to:\n{p}\n({len(video_events)} video shape records)")
+        except Exception as e:
+            messagebox.showerror("Shapes Export Error", str(e))
 
     def _export_timeline_image(self, out_path: Path):
         import matplotlib

@@ -82,11 +82,15 @@ def _generate_markdown(result: AnalysisResult, path: Path) -> None:
         lines.append(f"**Score:** {ev.score:.2f} (peak {ev.peak_score:.2f})")
         lines.append(f"**File:** `{ev.file_path}`")
         lines.append(f"**Description:** {ev.description}")
+        if ev.shape_description:
+            lines.append(f"**Shape:** {ev.shape_description}")
         if ev.tags:
             lines.append(f"**Tags:** {', '.join(ev.tags)}")
         if ev.features:
             feat_str = ", ".join(f"{k}={v:.3g}" if isinstance(v, (int, float)) else f"{k}={v}" for k, v in list(ev.features.items())[:6])
             lines.append(f"**Key features:** {feat_str}")
+        if ev.geometry:
+            lines.append(f"**Geometry:** {ev.geometry}")
         lines.append("")
 
     lines.append("## Parameters")
@@ -196,10 +200,15 @@ def _generate_pdf(result: AnalysisResult, path: Path, include_plots: bool = True
         header = f"{ev.modality.value.upper()}  |  {ev.pretty_time()}  +{ev.duration*1000:.0f} ms  |  score={ev.score:.2f}"
         story.append(Paragraph(f"<b>{header}</b>", styles["EventTitle"]))
         story.append(Paragraph(ev.description, styles["BodyTextTight"]))
+        if ev.shape_description:
+            story.append(Paragraph(f"<font size='7' color='#336699'>Shape: {ev.shape_description}</font>", styles["BodyTextTight"]))
         story.append(Paragraph(f"<font size='7'>File: {Path(ev.file_path).name}</font>", styles["BodyTextTight"]))
         if ev.features:
             feat = ", ".join(f"{k}={v:.3g}" if isinstance(v, float) else f"{k}={v}" for k, v in list(ev.features.items())[:5])
             story.append(Paragraph(f"<font size='7' color='#444444'>features: {feat}</font>", styles["BodyTextTight"]))
+        if ev.geometry:
+            gstr = str(ev.geometry)
+            story.append(Paragraph(f"<font size='6' color='#555555'>geom: {gstr[:90]}</font>", styles["BodyTextTight"]))
         story.append(Spacer(1, 3))
 
     if include_plots and result.events:

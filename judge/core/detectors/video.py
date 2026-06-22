@@ -7,13 +7,14 @@ signatures using dense optical flow and frame-level statistics.
 
 from __future__ import annotations
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple, Callable
+from typing import List, Dict, Optional, Tuple, Callable, Any
 import logging
 
 import cv2
 import numpy as np
 import time
 import threading
+from dataclasses import replace
 
 from judge.core.models import Modality, AnomalyEvent
 from judge.core.detectors.base import BaseDetector
@@ -31,11 +32,13 @@ class VideoAnomalyDetector(BaseDetector):
         min_duration: float = 0.08,
         sample_every: int = 2,
         flow_block_size: int = 16,
+        extract_shapes: bool = True,
         **kwargs,
     ):
         super().__init__(sensitivity=sensitivity, min_duration=min_duration, **kwargs)
         self.sample_every = max(1, sample_every)
         self.flow_block_size = flow_block_size
+        self.extract_shapes = extract_shapes
 
     def detect(self, file_path: Path, metadata: Optional[Dict] = None, progress_callback: Optional[Callable[[str, float], None]] = None, cancel_event: Optional[threading.Event] = None, pause_event: Optional[threading.Event] = None) -> List[AnomalyEvent]:
         cap = cv2.VideoCapture(str(file_path))
@@ -156,6 +159,10 @@ class VideoAnomalyDetector(BaseDetector):
                     "peak_intensity_delta": float(np.max(dint[mask])),
                     "mean_edge_density": float(np.mean(edens[mask])),
                 })
+
+        if self.extract_shapes:
+            events = self._enrich_with_shapes(events, file_path, fps)
+
         return events
 
     def _group_events(
@@ -222,3 +229,92 @@ class VideoAnomalyDetector(BaseDetector):
             events.append(ev)
             i = j
         return events
+
+    def _enrich_with_shapes(
+        self, events: List[AnomalyEvent], file_path: Path, fps: float
+    ) -> List[AnomalyEvent]:
+        """Re-extract representative frame shapes (bbox + description) for video events."""
+        enriched: List[AnomalyEvent] = []
+        for ev in events:
+            if ev.modality != Modality.VIDEO:
+                enriched.append(ev)
+                continue
+            # Pick a representative time near peak (use midpoint)
+            rep_t = ev.start_time + max(0.0, min(ev.duration * 0.5, 0.2))
+            shape_desc, geom = self._extract_shape_at_time(file_path, rep_t, fps)
+            if shape_desc or geom:
+                new_features = dict(ev.features)
+                if geom:
+                    new_features.update({
+                        "shape_area": float(geom.get("area", 0)),
+                        "shape_aspect": float(geom.get("aspect_ratio", 1.0)),
+                    })
+                ev = replace(
+                    ev,
+                    shape_description=shape_desc or ev.shape_description,
+                    geometry=geom or ev.geometry,
+                    features=new_features,
+                )
+            enriched.append(ev)
+        return enriched
+
+    def _extract_shape_at_time(
+        self, file_path: Path, t: float, fps: float
+    ) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
+        """Seek to time t, analyze local motion to derive a simple object shape description + geometry."""
+        cap = cv2.VideoCapture(str(file_path))
+        if not cap.isOpened():
+            return None, None
+        try:
+            total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+            frame_pos = max(0, min(int(t * fps), max(0, total - 2)))
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_pos)
+            ret1, f1 = cap.read()
+            ret2, f2 = cap.read()
+            if not ret1 or f1 is None or not ret2 or f2 is None:
+                return None, None
+
+            g1 = cv2.cvtColor(f1, cv2.COLOR_BGR2GRAY)
+            g2 = cv2.cvtColor(f2, cv2.COLOR_BGR2GRAY)
+            diff = cv2.absdiff(g1, g2)
+            # Threshold motion
+            _, motion = cv2.threshold(diff, 25, 255, cv2.THRESH_BINARY)
+            # Dilate to connect components
+            kernel = np.ones((5, 5), np.uint8)
+            motion = cv2.dilate(motion, kernel, iterations=2)
+            motion = cv2.erode(motion, kernel, iterations=1)
+
+            contours, _ = cv2.findContours(motion, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if not contours:
+                return None, None
+            c = max(contours, key=cv2.contourArea)
+            area = cv2.contourArea(c)
+            if area < 4:
+                return None, None
+            x, y, w, h = cv2.boundingRect(c)
+            aspect = w / float(h) if h > 0 else 1.0
+            cx, cy = x + w // 2, y + h // 2
+
+            # Classify rough shape
+            if aspect >= 2.8:
+                stype = "elongated / linear streak"
+            elif aspect <= 0.36:
+                stype = "vertically elongated"
+            elif area < 40:
+                stype = "compact point-like"
+            elif area > 800:
+                stype = "large extended region"
+            else:
+                stype = "irregular blob"
+
+            shape_desc = f"Detected object: {stype} (area~{area:.0f}px, aspect~{aspect:.1f})"
+            geom: Dict[str, Any] = {
+                "bbox": [int(x), int(y), int(w), int(h)],
+                "area": float(area),
+                "aspect_ratio": round(float(aspect), 2),
+                "centroid": [int(cx), int(cy)],
+                "type": "motion_blob",
+            }
+            return shape_desc, geom
+        finally:
+            cap.release()
