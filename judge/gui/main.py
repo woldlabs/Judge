@@ -733,28 +733,35 @@ class JudgeApp(ctk.CTk):
         self._slide_index = 0
         self._slide_events = sorted(self.events, key=lambda e: e.start_time)
 
-        self.slide_info = ctk.CTkLabel(win, text="", font=ctk.CTkFont(size=11), wraplength=900, justify="left")
-        self.slide_info.pack(pady=8, padx=10)
+        # Use grid for reliable expand on maximize/resize of the slidedeck window
+        win.grid_rowconfigure(1, weight=1)
+        win.grid_columnconfigure(0, weight=1)
 
-        self.slide_preview = ctk.CTkLabel(win, text="", fg_color="#2a2d36")
-        self.slide_preview.pack(pady=6, fill="both", expand=True)
+        self.slide_info = ctk.CTkLabel(win, text="", font=ctk.CTkFont(size=11), wraplength=900, justify="left")
+        self.slide_info.grid(row=0, column=0, sticky="ew", pady=8, padx=10)
+
+        self.slide_preview = ctk.CTkLabel(win, text="Loading frames...", fg_color="#2a2d36")
+        self.slide_preview.grid(row=1, column=0, sticky="nsew", pady=6, padx=10)
         self._slide_img = None
-        self._slide_images = []  # IMPORTANT: keep ALL CTkImage instances alive to prevent Tk "pyimageX doesn't exist" on GC for previous slides
+        self._slide_images = []  # keep ALL CTkImage instances alive to prevent "pyimageX doesn't exist" GC errors
+        self._slide_frame_cache = {}  # event_id -> original PIL.Image for fast nav + resize to any size
         self._slide_win = win
 
-        # Support expanding/maximizing the preview image on window resize (debounced to avoid excessive reloads)
+        # Support expanding/maximizing the preview image on window resize
         self._slide_resize_debounce = None
         def _debounce_resize(event):
+            if getattr(self, '_slidedeck_preloading', False):
+                return
             if self._slide_resize_debounce is not None:
                 try:
                     self.after_cancel(self._slide_resize_debounce)
                 except Exception:
                     pass
-            self._slide_resize_debounce = self.after(180, self._reload_current_slide_image)
+            self._slide_resize_debounce = self.after(150, self._reload_current_slide_image)
         self.slide_preview.bind("<Configure>", _debounce_resize)
 
         nav_frame = ctk.CTkFrame(win)
-        nav_frame.pack(pady=10)
+        nav_frame.grid(row=2, column=0, pady=10, sticky="ew")
 
         ctk.CTkButton(nav_frame, text="◀ Prev", width=80, command=self._prev_slide).pack(side="left", padx=5)
         self.slide_pos_label = ctk.CTkLabel(nav_frame, text="1 / 1", font=ctk.CTkFont(size=11))
@@ -767,15 +774,18 @@ class JudgeApp(ctk.CTk):
                     self.after_cancel(self._slide_resize_debounce)
             except Exception:
                 pass
-            # allow GC of this slidedeck's images when closed
+            # allow GC 
             self._slide_images = []
+            self._slide_frame_cache = {}
             win.destroy()
 
         ctk.CTkButton(nav_frame, text="Close", width=80, command=_on_slidedeck_close).pack(side="left", padx=20)
 
-        # Let layout settle then load (ensures winfo sizes are accurate for large/expandable images)
+        # Preload frames once for fast navigation + dynamic expand on resize/maximize.
+        # This front-loads the (slow) video seeks/decodes so that Prev/Next/resize become instant.
+        self._slidedeck_preloading = True
         win.update_idletasks()
-        self.after(80, self._update_slide)
+        self.after(30, self._preload_slidedeck_frames)
 
     def _update_slide(self):
         if not self._slide_events:
@@ -786,46 +796,42 @@ class JudgeApp(ctk.CTk):
         info_text = f"[{ev.modality.value.upper()}]  {ev.pretty_time()}  +{ev.duration*1000:.0f}ms   score={ev.score:.2f}\n{ev.description}\nFile: {Path(ev.file_path).name}"
         self.slide_info.configure(text=info_text)
 
-        self.slide_preview.configure(text="Loading frame...")
-        # Do not null the image ref here to avoid "image not found" / Tcl errors on subsequent slides
-
         if ev.modality.value == "video":
+            self.slide_preview.configure(text="Loading frame...")
             try:
-                import cv2
-                from PIL import Image
-                cap = cv2.VideoCapture(str(ev.file_path))
-                fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-                pos = int(ev.start_time * fps)
-                cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, pos))
-                ret, frame = cap.read()
-                cap.release()
-                if ret and frame is not None:
-                    # Dynamic/expandable size: prefer toplevel geometry (more reliable than label winfo during layout)
-                    # Reserve space for info text + nav buttons + margins. This makes the photo grow when you resize/maximize the slidedeck.
-                    try:
-                        if hasattr(self, '_slide_win') and self._slide_win and self._slide_win.winfo_exists():
-                            tw = self._slide_win.winfo_width() or 900
-                            th = self._slide_win.winfo_height() or 650
-                            pw = max(480, tw - 80)
-                            ph = max(320, th - 170)
-                        else:
-                            pw = max(400, self.slide_preview.winfo_width() or 640)
-                            ph = max(280, self.slide_preview.winfo_height() or 360)
-                    except Exception:
-                        pw, ph = 640, 360
-                    h, w = frame.shape[:2]
-                    scale = min(pw / max(1, float(w)), ph / max(1, float(h)))
-                    nw = max(200, int(w * scale))
-                    nh = max(150, int(h * scale))
-                    frame = cv2.resize(frame, (nw, nh))
-                    img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-                    ctkimg = ctk.CTkImage(light_image=img, dark_image=img, size=(nw, nh))
-                    self._slide_images.append(ctkimg)  # keep ref to avoid pyimage GC errors on later slides
-                    self.slide_preview.configure(image=ctkimg, text="")
-                    self._slide_img = ctkimg
-                else:
+                pil = None
+                if hasattr(self, '_slide_frame_cache') and ev.event_id in self._slide_frame_cache:
+                    pil = self._slide_frame_cache[ev.event_id]
+                if pil is None:
+                    pil = self._get_frame_pil_for_event(ev)
+                if pil is None:
                     self.slide_preview.configure(text="Frame unavailable")
                     self._slide_img = None
+                    return
+
+                # Compute target display size from current window for true expand/maximize to see detail
+                try:
+                    if hasattr(self, '_slide_win') and self._slide_win and self._slide_win.winfo_exists():
+                        tw = self._slide_win.winfo_width() or 960
+                        th = self._slide_win.winfo_height() or 680
+                        pw = max(500, tw - 40)
+                        ph = max(350, th - 100)
+                    else:
+                        pw = max(500, self.slide_preview.winfo_width() or 800)
+                        ph = max(350, self.slide_preview.winfo_height() or 500)
+                except Exception:
+                    pw, ph = 800, 500
+
+                w, h = pil.size
+                scale = min(pw / float(w), ph / float(h))
+                nw = max(200, int(w * scale))
+                nh = max(150, int(h * scale))
+                # Use LANCZOS for good quality when user maximizes for detail
+                resized = pil.resize((nw, nh), Image.LANCZOS)
+                ctkimg = ctk.CTkImage(light_image=resized, dark_image=resized, size=(nw, nh))
+                self._slide_images.append(ctkimg)
+                self.slide_preview.configure(image=ctkimg, text="")
+                self._slide_img = ctkimg
             except Exception as e:
                 self.slide_preview.configure(text=f"Error: {str(e)[:50]}")
                 self._slide_img = None
@@ -842,6 +848,77 @@ class JudgeApp(ctk.CTk):
                     self._update_slide()
             except Exception:
                 pass  # window may have been closed during debounce
+
+    def _get_frame_pil_for_event(self, ev):
+        """Helper to extract a single frame as PIL Image (original resolution for detail on maximize)."""
+        if ev is None or getattr(ev.modality, 'value', None) != "video":
+            return None
+        try:
+            import cv2
+            from PIL import Image
+            cap = cv2.VideoCapture(str(ev.file_path))
+            if not cap.isOpened():
+                cap.release()
+                return None
+            fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+            pos = int(ev.start_time * fps)
+            cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, pos))
+            ret, frame = cap.read()
+            cap.release()
+            if ret and frame is not None:
+                return Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+        except Exception:
+            pass
+        return None
+
+    def _preload_slidedeck_frames(self):
+        """Preload all video frames at slidedeck open. This makes navigation + resize/maximize instant
+        and avoids repeated slow seeks/decodes on every Prev/Next/resize."""
+        import cv2
+        from PIL import Image
+        from collections import defaultdict
+
+        self._slide_frame_cache = {}
+        self._slidedeck_preloading = True
+        try:
+            video_events = [e for e in self._slide_events if getattr(e.modality, 'value', None) == 'video']
+            if not video_events:
+                self.slide_preview.configure(text="No video frames in this slidedeck")
+                self._slidedeck_preloading = False
+                return
+
+            # Show initial loading state
+            self.slide_preview.configure(text=f"Preloading {len(video_events)} frame(s)...")
+
+            # Group by file to keep cap open longer (faster sequential seeks)
+            by_file = defaultdict(list)
+            for ev in video_events:
+                by_file[str(ev.file_path)].append(ev)
+
+            for fpath, evs in by_file.items():
+                cap = None
+                try:
+                    cap = cv2.VideoCapture(fpath)
+                    if not cap or not cap.isOpened():
+                        continue
+                    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+                    for ev in sorted(evs, key=lambda e: e.start_time):  # seek forward as much as possible
+                        pos = int(ev.start_time * fps)
+                        cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, pos))
+                        ret, frame = cap.read()
+                        if ret and frame is not None:
+                            pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+                            self._slide_frame_cache[ev.event_id] = pil
+                finally:
+                    if cap:
+                        cap.release()
+
+            self._slidedeck_preloading = False
+            # Now show the first (or current) slide using cached high-res frames
+            self._update_slide()
+        except Exception as e:
+            self._slidedeck_preloading = False
+            self.slide_preview.configure(text=f"Preload error: {str(e)[:40]}")
 
     def _prev_slide(self):
         if self._slide_index > 0:
