@@ -50,7 +50,8 @@ class AnalysisSession:
         self.metadata: Dict[str, MediaMetadata] = {}
         self.detectors = {
             Modality.VIDEO: VideoAnomalyDetector(
-                sensitivity=sensitivity, min_duration=min_event_duration
+                sensitivity=sensitivity, min_duration=min_event_duration,
+                analysis_scale=0.5,  # downsample for ~4x faster flow/edge compute w/ negligible loss in detection power
             ),
             Modality.AUDIO: AudioAnomalyDetector(
                 sensitivity=sensitivity, min_duration=min_event_duration

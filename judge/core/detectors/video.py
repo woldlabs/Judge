@@ -30,15 +30,17 @@ class VideoAnomalyDetector(BaseDetector):
         self,
         sensitivity: float = 0.7,
         min_duration: float = 0.08,
-        sample_every: int = 2,
+        sample_every: int = 3,
         flow_block_size: int = 16,
         extract_shapes: bool = True,
+        analysis_scale: float = 0.5,
         **kwargs,
     ):
         super().__init__(sensitivity=sensitivity, min_duration=min_duration, **kwargs)
         self.sample_every = max(1, sample_every)
         self.flow_block_size = flow_block_size
         self.extract_shapes = extract_shapes
+        self.analysis_scale = max(0.1, min(1.0, float(analysis_scale)))  # downsample factor for heavy CV ops; 0.5=4x speedup typically
 
     def detect(self, file_path: Path, metadata: Optional[Dict] = None, progress_callback: Optional[Callable[[str, float], None]] = None, cancel_event: Optional[threading.Event] = None, pause_event: Optional[threading.Event] = None) -> List[AnomalyEvent]:
         cap = cv2.VideoCapture(str(file_path))
@@ -61,7 +63,9 @@ class VideoAnomalyDetector(BaseDetector):
             cap.release()
             return []
 
-        prev_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        # Read as downsampled early for speed (cvt + flow on smaller is much faster)
+        full_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        prev_gray = cv2.resize(full_gray, (0, 0), fx=self.analysis_scale, fy=self.analysis_scale, interpolation=cv2.INTER_AREA) if self.analysis_scale < 1.0 else full_gray
 
         times: List[float] = []
         flow_mags: List[float] = []
@@ -75,16 +79,17 @@ class VideoAnomalyDetector(BaseDetector):
             if not ret:
                 break
             frame_idx += 1
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            full_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            gray = cv2.resize(full_gray, (0, 0), fx=self.analysis_scale, fy=self.analysis_scale, interpolation=cv2.INTER_AREA) if self.analysis_scale < 1.0 else full_gray
 
-            # Always compute successive-frame diffs for accurate flow (sampling only downsamples the series)
+            # Compute on (possibly downsampled) images -- 4x faster typically at 0.5 scale
             diff = cv2.absdiff(gray, prev_gray)
             delta_int = float(np.mean(diff))
 
             flow = cv2.calcOpticalFlowFarneback(
                 prev_gray, gray, None,
-                pyr_scale=0.5, levels=2, winsize=15,
-                iterations=2, poly_n=5, poly_sigma=1.2, flags=0
+                pyr_scale=0.5, levels=1, winsize=13,
+                iterations=1, poly_n=3, poly_sigma=1.1, flags=0
             )
             mag, _ = cv2.cartToPolar(flow[..., 0], flow[..., 1])
             flow_mag = float(np.mean(mag))
@@ -92,7 +97,7 @@ class VideoAnomalyDetector(BaseDetector):
             # Edge density (Sobel) - fraction of strong edges
             sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
             sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
-            edge_density = float(np.mean(np.hypot(sobelx, sobely) > 60))
+            edge_density = float(np.mean(np.hypot(sobelx, sobely) > 50))
 
             if frame_idx % self.sample_every == 0:
                 times.append(frame_idx / fps)
@@ -276,6 +281,11 @@ class VideoAnomalyDetector(BaseDetector):
 
             g1 = cv2.cvtColor(f1, cv2.COLOR_BGR2GRAY)
             g2 = cv2.cvtColor(f2, cv2.COLOR_BGR2GRAY)
+            # downscale for shape mask too (fast); we'll scale geometry back
+            scale = self.analysis_scale
+            if scale < 1.0:
+                g1 = cv2.resize(g1, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+                g2 = cv2.resize(g2, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
             diff = cv2.absdiff(g1, g2)
             # Threshold motion
             _, motion = cv2.threshold(diff, 25, 255, cv2.THRESH_BINARY)
@@ -289,11 +299,22 @@ class VideoAnomalyDetector(BaseDetector):
                 return None, None
             c = max(contours, key=cv2.contourArea)
             area = cv2.contourArea(c)
-            if area < 4:
+            inv = 1.0
+            if scale < 1.0:
+                inv = 1.0 / scale
+                if area * (inv**2) < 4:  # effective full res area
+                    return None, None
+            elif area < 4:
                 return None, None
             x, y, w, h = cv2.boundingRect(c)
             aspect = w / float(h) if h > 0 else 1.0
             cx, cy = x + w // 2, y + h // 2
+
+            # scale geometry back to original video resolution for correct overlays / reports
+            if scale < 1.0:
+                x, y, w, h = [int(v * inv) for v in (x, y, w, h)]
+                area *= (inv * inv)
+                cx, cy = int(cx * inv), int(cy * inv)
 
             # Classify rough shape
             if aspect >= 2.8:
