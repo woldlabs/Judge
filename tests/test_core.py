@@ -1,8 +1,7 @@
-"""Basic smoke tests for Judge core."""
+"""Core smoke tests for Judge."""
 
 from pathlib import Path
 import tempfile
-import pytest
 
 from judge.utils.demo import generate_demo_dataset
 from judge.core.session import AnalysisSession
@@ -20,10 +19,32 @@ def test_demo_generation_and_run():
         result = sess.run()
         assert result is not None
         assert isinstance(result.events, list)
-        # With injected anomalies we should find at least a couple
         assert len(result.events) >= 1
+        assert result.files_processed
+        assert "sensitivity" in result.parameters
 
-        # Report generation should succeed
         report_path = Path(tmp) / "test_report"
         out = generate_report(result, report_path, format="all")
-        assert out is not None or Path(str(report_path) + ".pdf").exists() or Path(str(report_path) + ".md").exists()
+        assert out is not None
+        assert Path(str(report_path) + ".pdf").exists() or out.with_suffix(".pdf").exists()
+        assert Path(str(report_path) + ".md").exists() or out.with_suffix(".md").exists()
+        assert Path(str(report_path) + ".json").exists() or out.with_suffix(".json").exists()
+
+
+def test_session_skips_missing_files():
+    sess = AnalysisSession()
+    assert sess.add_file("this_file_does_not_exist.mp4") is False
+    result = sess.run()
+    assert result.events == []
+    assert result.notes
+
+
+def test_add_directory_and_clear(tmp_path):
+    files = generate_demo_dataset(tmp_path, duration_s=8)
+    sess = AnalysisSession()
+    added = sess.add_directory(tmp_path, recursive=False)
+    assert added >= 3
+    names = {p.name for p in sess.files}
+    assert Path(files["video"]).name in names
+    sess.clear()
+    assert sess.files == []

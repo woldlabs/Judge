@@ -43,6 +43,7 @@ class VideoAnomalyDetector(BaseDetector):
         self.analysis_scale = max(0.1, min(1.0, float(analysis_scale)))  # downsample factor for heavy CV ops; 0.5=4x speedup typically
 
     def detect(self, file_path: Path, metadata: Optional[Dict] = None, progress_callback: Optional[Callable[[str, float], None]] = None, cancel_event: Optional[threading.Event] = None, pause_event: Optional[threading.Event] = None) -> List[AnomalyEvent]:
+        file_path = Path(file_path)
         cap = cv2.VideoCapture(str(file_path))
         if not cap.isOpened():
             logger.error("Failed to open video %s", file_path)
@@ -75,10 +76,24 @@ class VideoAnomalyDetector(BaseDetector):
         last_report_time = time.time()
 
         while True:
+            if cancel_event and cancel_event.is_set():
+                self._report_progress("cancelled by user", 0.0)
+                break
+
+            self._check_pause(pause_event)
+
+            frame_idx += 1
+            # Skip decode+flow on frames we will not sample. Optical flow is then
+            # computed between consecutive *sampled* frames, which is the intended
+            # temporal resolution and avoids paying Farneback on every frame.
+            if self.sample_every > 1 and (frame_idx % self.sample_every) != 0:
+                if not cap.grab():
+                    break
+                continue
+
             ret, frame = cap.read()
             if not ret:
                 break
-            frame_idx += 1
             full_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             gray = cv2.resize(full_gray, (0, 0), fx=self.analysis_scale, fy=self.analysis_scale, interpolation=cv2.INTER_AREA) if self.analysis_scale < 1.0 else full_gray
 
@@ -99,19 +114,12 @@ class VideoAnomalyDetector(BaseDetector):
             sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
             edge_density = float(np.mean(np.hypot(sobelx, sobely) > 50))
 
-            if frame_idx % self.sample_every == 0:
-                times.append(frame_idx / fps)
-                flow_mags.append(flow_mag)
-                delta_intensities.append(delta_int)
-                edge_densities.append(edge_density)
+            times.append(frame_idx / fps)
+            flow_mags.append(flow_mag)
+            delta_intensities.append(delta_int)
+            edge_densities.append(edge_density)
 
             prev_gray = gray
-
-            if cancel_event and cancel_event.is_set():
-                self._report_progress("cancelled by user", 0.0)
-                break
-
-            self._check_pause(pause_event)
 
             # Live sub-progress ~every 2 seconds so it doesn't look frozen
             now = time.time()
@@ -179,39 +187,27 @@ class VideoAnomalyDetector(BaseDetector):
         file_path: Path,
     ) -> List[AnomalyEvent]:
         events: List[AnomalyEvent] = []
-        n = len(t)
-        i = 0
         min_len_samples = max(2, int(self.min_duration * fps / max(1, self.sample_every)))
+        runs = self._true_runs(mask, max_gap=1)
 
-        while i < n:
-            if not mask[i]:
-                i += 1
-                continue
-
-            j = i
-            while j < n and mask[j]:
-                j += 1
-
+        for i, j in runs:
             # Expand slightly for context
             start_idx = max(0, i - 1)
-            end_idx = min(n, j + 1)
+            end_idx = min(len(t), j + 1)
 
             if (end_idx - start_idx) < min_len_samples:
-                i = j
                 continue
 
             start_t = float(t[start_idx])
             end_t = float(t[end_idx - 1])
             duration = end_t - start_t
             if duration < self.min_duration:
-                i = j
                 continue
 
             seg_scores = scores[start_idx:end_idx]
             peak = float(np.max(seg_scores))
             mean_score = float(np.mean(seg_scores))
 
-            # Build description
             desc = (
                 f"Kinematic transient: peak MAD-score {peak:.2f} "
                 f"(flow+intensity+edge). Duration {duration*1000:.0f} ms."
@@ -232,7 +228,6 @@ class VideoAnomalyDetector(BaseDetector):
                 frame_end=int(end_t * fps),
             )
             events.append(ev)
-            i = j
         return events
 
     def _enrich_with_shapes(

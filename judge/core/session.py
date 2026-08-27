@@ -8,8 +8,7 @@ from typing import List, Dict, Any, Optional, Callable
 import uuid
 import logging
 import threading
-
-from tqdm import tqdm
+import time
 
 from judge.core.ingestion import DataIngestor, MediaMetadata
 from judge.core.models import AnalysisResult, AnomalyEvent, Modality
@@ -89,7 +88,6 @@ class AnalysisSession:
     def _check_and_pause(self, pause_event):
         if pause_event and pause_event.is_set():
             while pause_event.is_set():
-                import time
                 time.sleep(0.1)
 
     def run(self, cancel_event: Optional["threading.Event"] = None, pause_event: Optional["threading.Event"] = None) -> AnalysisResult:
@@ -98,10 +96,11 @@ class AnalysisSession:
         all_events: List[AnomalyEvent] = []
         files_processed: List[str] = []
         modality_stats: Dict[str, Dict[str, Any]] = {}
+        notes: List[str] = []
 
         total = len(self.files)
         if total == 0:
-            return AnalysisResult(session_id=session_id)
+            return AnalysisResult(session_id=session_id, notes=["No files were added to the session."])
 
         self._report_progress("Loading file metadata...", 2)
 
@@ -113,11 +112,17 @@ class AnalysisSession:
                 self._report_progress(f"Loaded {fpath.name}", 5 + (idx / total) * 10)
             except Exception as e:
                 logger.exception("Metadata extraction failed for %s", fpath)
+                notes.append(f"Metadata extraction failed for {fpath.name}: {e}")
                 self._report_progress(f"Failed: {fpath.name}", 5 + (idx / total) * 10)
 
         if cancel_event and cancel_event.is_set():
             self._report_progress("Analysis cancelled", 18)
-            return AnalysisResult(session_id=session_id, files_processed=files_processed, events=[])
+            return AnalysisResult(
+                session_id=session_id,
+                files_processed=files_processed,
+                events=[],
+                notes=notes + ["Analysis cancelled before detectors ran."],
+            )
 
         self._check_and_pause(pause_event)
 
@@ -157,6 +162,7 @@ class AnalysisSession:
                 )
             except Exception as e:
                 logger.exception("Detector failed on %s", fpath)
+                notes.append(f"Detector failed on {Path(fpath).name}: {e}")
                 self._report_progress(f"Error on {Path(fpath).name}", pct_base)
 
             if cancel_event and cancel_event.is_set():
@@ -192,6 +198,7 @@ class AnalysisSession:
                 "cross_modal_window": self.cross_modal_window,
             },
             duration_seconds=max((m.duration for m in self.metadata.values()), default=0.0),
+            notes=notes,
         )
 
         self._report_progress("Analysis complete.", 100)

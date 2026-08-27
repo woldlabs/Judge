@@ -48,6 +48,7 @@ class JudgeApp(ctk.CTk):
         self._file_paths: List[str] = []
         self._analysis_start_time = None
         self.cancel_event = None
+        self.pause_event = None
         self._preview_img = None
         self._preview_images = []  # keep refs for safe image cycling in main preview
         self._slide_img = None
@@ -309,9 +310,9 @@ class JudgeApp(ctk.CTk):
         paths = filedialog.askopenfilenames(
             title="Select video, audio or sensor files",
             filetypes=[
-                ("All supported", "*.mp4 *.mov *.avi *.mkv *.wav *.flac *.mp3 *.ogg *.csv *.json"),
-                ("Video", "*.mp4 *.mov *.avi *.mkv"),
-                ("Audio", "*.wav *.flac *.mp3 *.ogg"),
+                ("All supported", "*.mp4 *.mov *.avi *.mkv *.m4v *.wav *.flac *.mp3 *.ogg *.m4a *.wma *.csv *.json"),
+                ("Video", "*.mp4 *.mov *.avi *.mkv *.m4v"),
+                ("Audio", "*.wav *.flac *.mp3 *.ogg *.m4a *.wma"),
                 ("Sensor", "*.csv *.json"),
                 ("All files", "*.*"),
             ]
@@ -472,9 +473,12 @@ class JudgeApp(ctk.CTk):
         if not self._file_paths:
             messagebox.showwarning("No data", "Please add files or a folder first.")
             return
+        from dataclasses import replace
+
         original_sens = self.sens_var.get()
         original_dur = self.min_dur_var.get()
         original_win = self.cross_win_var.get()
+        file_paths = list(self._file_paths)
 
         # 10 intelligently chosen settings (using full config space: sens + min_dur + cross_win)
         # Prioritizes broad coverage for detection: permissive combos for faint/brief anomalies,
@@ -492,33 +496,75 @@ class JudgeApp(ctk.CTk):
             (0.60, 0.07, 2.2),  # 10: med sens + slightly longer events
         ]
 
+        self.cancel_event = threading.Event()
+        self.pause_event = threading.Event()
+        self.run_btn.configure(state="normal", text="⏸ PAUSE", command=self._toggle_pause)
+        self.stop_btn.configure(state="normal")
+        self.hail_mary_btn.configure(state="disabled")
         self._log("Starting HAIL MARY sweep (10 smart settings using Sensitivity + Min duration + Cross-window)...")
-        all_hm_events = []
-        for i, (s, d, w) in enumerate(hm_settings):
-            self._log(f"  Hail Mary {i+1}/10: sens={s:.2f} dur={d:.3f}s win={w:.1f}s")
-            sess = AnalysisSession(
-                sensitivity=s,
-                min_event_duration=d,
-                cross_modal_window=w,
-            )
-            for p in self._file_paths:
-                sess.add_file(p)
-            try:
-                res = sess.run()
-                self._log(f"    -> {len(res.events)} events")
-                tag = f"hm_{i+1}"
-                for ev in res.events:
-                    ev.tags = getattr(ev, 'tags', []) + [tag]
-                    all_hm_events.append(ev)
-            except Exception as e:
-                self._log(f"    error: {e}")
+        self._update_activity("hail mary sweep")
+        self._analysis_start_time = time.time()
 
-        self.all_events = all_hm_events
-        self.events = all_hm_events
-        self._render_event_list()
-        self._render_overview_plot()
-        self._log(f"HAIL MARY complete. Total {len(all_hm_events)} events across 10 settings.")
-        self.hail_mary_btn.configure(state="normal")
+        def worker():
+            from judge.core.models import AnalysisResult
+            all_hm_events = []
+            last_res = None
+            notes = []
+            try:
+                for i, (s, d, w) in enumerate(hm_settings):
+                    if self.cancel_event and self.cancel_event.is_set():
+                        notes.append("Hail Mary cancelled by user.")
+                        break
+                    self.after(0, lambda i=i, s=s, d=d, w=w: self._log(
+                        f"  Hail Mary {i+1}/10: sens={s:.2f} dur={d:.3f}s win={w:.1f}s"
+                    ))
+                    self.after(0, lambda i=i: self._update_progress(f"Hail Mary {i+1}/10", 5 + i * 9))
+                    sess = AnalysisSession(
+                        sensitivity=s,
+                        min_event_duration=d,
+                        cross_modal_window=w,
+                        progress_callback=self._progress_cb,
+                    )
+                    for p in file_paths:
+                        sess.add_file(p)
+                    try:
+                        res = sess.run(cancel_event=self.cancel_event, pause_event=self.pause_event)
+                        last_res = res
+                        tag = f"hm_{i+1}"
+                        tagged = [replace(ev, tags=list(ev.tags) + [tag]) for ev in res.events]
+                        all_hm_events.extend(tagged)
+                        self.after(0, lambda n=len(res.events), i=i: self._log(f"    -> {n} events (pass {i+1})"))
+                    except Exception as e:
+                        notes.append(f"Hail Mary pass {i+1} failed: {e}")
+                        self.after(0, lambda e=e: self._log(f"    error: {e}"))
+
+                result = AnalysisResult(
+                    session_id=(last_res.session_id if last_res else "hail-mary"),
+                    files_processed=file_paths,
+                    events=all_hm_events,
+                    modality_stats=last_res.modality_stats if last_res else {},
+                    parameters={
+                        "mode": "hail_mary",
+                        "passes": len(hm_settings),
+                        "sensitivity": original_sens,
+                        "min_event_duration": original_dur,
+                        "cross_modal_window": original_win,
+                    },
+                    duration_seconds=last_res.duration_seconds if last_res else 0.0,
+                    notes=notes,
+                )
+                if self.cancel_event and self.cancel_event.is_set():
+                    self.after(0, lambda: self._analysis_cancelled(result))
+                else:
+                    self.after(0, lambda: self._analysis_finished(result))
+                    self.after(0, lambda n=len(all_hm_events): self._log(
+                        f"HAIL MARY complete. Total {n} events across 10 settings."
+                    ))
+            except Exception as ex:
+                logger.exception("Hail Mary failed")
+                self.after(0, lambda: self._analysis_error(str(ex)))
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _progress_cb(self, msg: str, pct: float):
         self.after(0, lambda: self._update_progress(msg, pct))
@@ -1052,12 +1098,21 @@ class JudgeApp(ctk.CTk):
             sf.write(str(out_path), clip, sr)
 
         else:
-            # sensor: export slice of CSV
+            # sensor: export slice of CSV or JSON
             import pandas as pd
-            df = pd.read_csv(p)
+            import json
+            if p.suffix.lower() == ".json":
+                with open(p, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, dict) and "data" in data:
+                    df = pd.DataFrame(data["data"])
+                else:
+                    df = pd.DataFrame(data)
+            else:
+                df = pd.read_csv(p)
             time_col = None
             for c in df.columns:
-                if str(c).lower() in {"t", "time", "timestamp"}:
+                if str(c).lower() in {"t", "time", "timestamp", "sec", "seconds", "ts"}:
                     time_col = c
                     break
             if time_col is None:

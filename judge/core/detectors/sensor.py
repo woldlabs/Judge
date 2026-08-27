@@ -36,6 +36,7 @@ class SensorAnomalyDetector(BaseDetector):
         self.contamination = contamination
 
     def detect(self, file_path: Path, metadata: Optional[Dict] = None, progress_callback: Optional[Callable[[str, float], None]] = None, cancel_event: Optional["threading.Event"] = None, pause_event: Optional["threading.Event"] = None) -> List[AnomalyEvent]:
+        file_path = Path(file_path)
         if progress_callback:
             self._progress_cb = progress_callback
             progress_callback("loading sensor data", 0.1)
@@ -60,6 +61,12 @@ class SensorAnomalyDetector(BaseDetector):
         except Exception as e:
             logger.error("Failed to load sensor data %s: %s", file_path, e)
             return []
+
+        if cancel_event and cancel_event.is_set():
+            self._report_progress("cancelled", 0.0)
+            return []
+
+        self._check_pause(pause_event)
 
         if progress_callback:
             progress_callback("multivariate outlier detection", 0.4)
@@ -146,27 +153,21 @@ class SensorAnomalyDetector(BaseDetector):
         channel_names: List[str],
     ) -> List[AnomalyEvent]:
         events: List[AnomalyEvent] = []
-        n = len(t)
-        i = 0
-        min_len = max(3, int(self.min_duration / (np.median(np.diff(t)) if len(t) > 1 else 0.01)))
+        dt = float(np.median(np.diff(t))) if len(t) > 1 else 0.01
+        if not np.isfinite(dt) or dt <= 0:
+            dt = 0.01
+        min_len = max(3, int(self.min_duration / dt))
+        max_gap = max(2, int(0.08 / dt))
+        runs = self._true_runs(mask, max_gap=max_gap)
 
-        while i < n:
-            if not mask[i]:
-                i += 1
-                continue
-            j = i
-            while j < n and mask[j]:
-                j += 1
-
+        for i, j in runs:
             if (j - i) < min_len:
-                i = j
                 continue
 
             start_t = float(t[i])
             end_t = float(t[j - 1])
             dur = max(0.0, end_t - start_t)
             if dur < self.min_duration:
-                i = j
                 continue
 
             seg = scores[i:j]
@@ -190,5 +191,4 @@ class SensorAnomalyDetector(BaseDetector):
                 channel=None,
             )
             events.append(ev)
-            i = j
         return events

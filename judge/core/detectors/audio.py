@@ -12,7 +12,6 @@ import logging
 
 import numpy as np
 import librosa
-import soundfile as sf
 import threading
 
 from judge.core.models import Modality, AnomalyEvent
@@ -38,6 +37,7 @@ class AudioAnomalyDetector(BaseDetector):
         self.hop_length = hop_length
 
     def detect(self, file_path: Path, metadata: Optional[Dict] = None, progress_callback: Optional[Callable[[str, float], None]] = None, cancel_event: Optional["threading.Event"] = None, pause_event: Optional["threading.Event"] = None) -> List[AnomalyEvent]:
+        file_path = Path(file_path)
         if progress_callback:
             self._progress_cb = progress_callback
             progress_callback("loading audio waveform", 0.05)
@@ -107,7 +107,7 @@ class AudioAnomalyDetector(BaseDetector):
         thresh = self._threshold(6.0)
         mask = composite > thresh
 
-        events = self._group_audio_events(times, composite, mask, sr, file_path)
+        events = self._group_audio_events(times, composite, mask, file_path)
 
         # Enrich features
         for ev in events:
@@ -127,31 +127,24 @@ class AudioAnomalyDetector(BaseDetector):
         times: np.ndarray,
         scores: np.ndarray,
         mask: np.ndarray,
-        sr: int,
         file_path: Path,
     ) -> List[AnomalyEvent]:
         events: List[AnomalyEvent] = []
-        n = len(times)
-        i = 0
-        min_samples = max(2, int(self.min_duration / (times[1] - times[0]) if len(times) > 1 else 3))
+        hop = float(times[1] - times[0]) if len(times) > 1 else 0.01
+        if not np.isfinite(hop) or hop <= 0:
+            hop = 0.01
+        min_samples = max(2, int(self.min_duration / hop))
+        max_gap = max(1, int(0.04 / hop))
+        runs = self._true_runs(mask, max_gap=max_gap)
 
-        while i < n:
-            if not mask[i]:
-                i += 1
-                continue
-            j = i
-            while j < n and mask[j]:
-                j += 1
-
+        for i, j in runs:
             if (j - i) < min_samples:
-                i = j
                 continue
 
             start_t = float(times[i])
             end_t = float(times[j - 1])
             dur = end_t - start_t
             if dur < self.min_duration:
-                i = j
                 continue
 
             seg = scores[i:j]
@@ -173,5 +166,4 @@ class AudioAnomalyDetector(BaseDetector):
                 file_path=file_path,
             )
             events.append(ev)
-            i = j
         return events

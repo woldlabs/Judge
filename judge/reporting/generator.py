@@ -7,9 +7,8 @@ Produces high-quality PDF + Markdown + JSON artifacts.
 
 from __future__ import annotations
 from pathlib import Path
-from typing import Optional, Dict, Any
-from datetime import datetime
-import os
+from typing import Optional
+import subprocess
 
 import matplotlib
 matplotlib.use("Agg")
@@ -19,9 +18,9 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.lib import colors
 from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle, PageBreak, KeepTogether
+    SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle, PageBreak
 )
-from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_JUSTIFY
+
 
 from judge.core.models import AnalysisResult, AnomalyEvent, Modality
 
@@ -46,15 +45,17 @@ def generate_report(
         if format == "pdf":
             return pdf_path
 
-    md_path = out.with_suffix(".md")
-    _generate_markdown(result, md_path)
+    if format in ("markdown", "all"):
+        md_path = out.with_suffix(".md")
+        _generate_markdown(result, md_path)
+        if format == "markdown":
+            return md_path
 
     json_path = out.with_suffix(".json")
     result.save_json(str(json_path))
-
-    if format == "markdown":
-        return md_path
-    return out
+    if format == "json":
+        return json_path
+    return out.with_suffix(".pdf") if format == "all" else out
 
 
 def _generate_markdown(result: AnalysisResult, path: Path) -> None:
@@ -74,6 +75,8 @@ def _generate_markdown(result: AnalysisResult, path: Path) -> None:
     lines.append(f"- **Total candidate events:** {total_events}")
     for mod, stats in result.modality_stats.items():
         lines.append(f"- **{mod}**: {stats.get('event_count', 0)} events, max score {stats.get('max_score', 0):.2f}")
+    cross = sum(1 for e in result.events if "cross-modal" in (e.tags or []))
+    lines.append(f"- **Cross-modal coincidences:** {cross}")
     lines.append("")
 
     lines.append("## Ranked Events")
@@ -93,9 +96,20 @@ def _generate_markdown(result: AnalysisResult, path: Path) -> None:
             lines.append(f"**Geometry:** {ev.geometry}")
         lines.append("")
 
+    if result.notes:
+        lines.append("## Notes")
+        for note in result.notes:
+            lines.append(f"- {note}")
+        lines.append("")
+
     lines.append("## Parameters")
     for k, v in result.parameters.items():
         lines.append(f"- {k}: {v}")
+
+    lines.append("")
+    lines.append("## Reproducibility")
+    for line in _reproducibility_lines():
+        lines.append(f"- {line}")
 
     path.write_text("\n".join(lines), encoding="utf-8")
 
@@ -168,6 +182,8 @@ def _generate_pdf(result: AnalysisResult, path: Path, include_plots: bool = True
             f"{mod.capitalize()} Events",
             f"{st.get('event_count',0)} (max score {st.get('max_score',0):.2f})"
         ])
+    cross = sum(1 for e in result.events if "cross-modal" in (e.tags or []))
+    summary_data.append(["Cross-modal coincidences", str(cross)])
 
     t = Table(summary_data, colWidths=[2.2*inch, 4.5*inch])
     t.setStyle(TableStyle([
@@ -225,6 +241,13 @@ def _generate_pdf(result: AnalysisResult, path: Path, include_plots: bool = True
     param_text = " | ".join(f"{k}={v}" for k, v in result.parameters.items())
     story.append(Paragraph(f"<font size='8'>{param_text}</font>", styles["BodyTextTight"]))
 
+    story.append(Spacer(1, 8))
+    story.append(Paragraph("Reproducibility", styles["SectionHeader"]))
+    story.append(Paragraph(
+        f"<font size='8'>{' | '.join(_reproducibility_lines())}</font>",
+        styles["BodyTextTight"],
+    ))
+
     story.append(Spacer(1, 20))
     story.append(Paragraph(
         "<i>This report was produced by the Judge framework. All events are statistical candidates only. "
@@ -233,6 +256,47 @@ def _generate_pdf(result: AnalysisResult, path: Path, include_plots: bool = True
     ))
 
     doc.build(story)
+
+
+def _reproducibility_lines() -> list:
+    import judge
+    import numpy
+    import pandas
+    import sklearn
+    lines = [
+        f"judge {judge.__version__}",
+        f"numpy {numpy.__version__}",
+        f"pandas {pandas.__version__}",
+        f"scikit-learn {sklearn.__version__}",
+    ]
+    try:
+        import cv2
+        lines.append(f"opencv {cv2.__version__}")
+    except Exception:
+        pass
+    try:
+        import librosa
+        lines.append(f"librosa {librosa.__version__}")
+    except Exception:
+        pass
+    commit = _git_commit()
+    if commit:
+        lines.append(f"git {commit}")
+    return lines
+
+
+def _git_commit() -> Optional[str]:
+    try:
+        root = Path(__file__).resolve().parents[2]
+        out = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=str(root),
+            stderr=subprocess.DEVNULL,
+            timeout=1,
+        )
+        return out.decode("utf-8", errors="ignore").strip() or None
+    except Exception:
+        return None
 
 
 def _create_score_distribution_plot(result: AnalysisResult) -> Optional[Path]:

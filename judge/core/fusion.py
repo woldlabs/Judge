@@ -1,16 +1,17 @@
-
 """
 Cross-modal fusion and event ranking.
 
 Correlates events across modalities within a configurable temporal window
-and produces composite evidence scores.
+and produces composite evidence scores. All original events are preserved;
+coincident detections receive a score boost and cross-modal tags.
 """
 
 from __future__ import annotations
-from typing import List, Dict, Any, Optional
-from collections import defaultdict
 
-from judge.core.models import AnomalyEvent, Modality
+from dataclasses import replace
+from typing import List
+
+from judge.core.models import AnomalyEvent
 
 
 def fuse_events(
@@ -18,107 +19,64 @@ def fuse_events(
     window_seconds: float = 1.5,
 ) -> List[AnomalyEvent]:
     """
-    Group near-coincident events and boost scores for cross-modal support.
-    Returns a new list of (possibly merged/boosted) events.
+    Boost scores for temporally coincident events across modalities.
+
+    Events are never dropped: investigators keep the full catalog, with
+    cross-modal support reflected in score, tags, and description.
     """
     if not events:
         return []
 
-    # Group by approximate time buckets
-    buckets: Dict[int, List[AnomalyEvent]] = defaultdict(list)
-    bucket_size = max(0.05, window_seconds / 3)
-
-    for ev in events:
-        bucket = int(ev.start_time / bucket_size)
-        buckets[bucket].append(ev)
-
+    window_seconds = max(0.0, float(window_seconds))
+    ordered = sorted(events, key=lambda e: e.start_time)
+    n = len(ordered)
     fused: List[AnomalyEvent] = []
-    seen = set()
+    left = 0
 
-    for bkt_events in buckets.values():
-        if not bkt_events:
-            continue
+    for i, ev in enumerate(ordered):
+        while left < n and ordered[left].start_time < ev.start_time - window_seconds:
+            left += 1
+        right = i
+        while right + 1 < n and ordered[right + 1].start_time <= ev.start_time + window_seconds:
+            right += 1
 
-        # Find clusters within window
-        bkt_events.sort(key=lambda e: e.start_time)
-        cluster: List[AnomalyEvent] = [bkt_events[0]]
+        other_mods = {
+            other.modality
+            for other in ordered[left : right + 1]
+            if other is not ev and other.modality != ev.modality
+        }
 
-        for ev in bkt_events[1:]:
-            if ev.start_time - cluster[-1].start_time <= window_seconds:
-                cluster.append(ev)
-            else:
-                fused.append(_merge_cluster(cluster, window_seconds))
-                cluster = [ev]
-        if cluster:
-            fused.append(_merge_cluster(cluster, window_seconds))
+        if other_mods:
+            boost = 0.35 * len(other_mods) * ev.score
+            fused_score = min(99.0, ev.score + boost)
+            tags = list(dict.fromkeys(
+                list(ev.tags) + ["cross-modal"] + [m.value for m in sorted(other_mods, key=lambda m: m.value)]
+            ))
+            features = dict(ev.features)
+            features["supporting_modalities"] = float(len(other_mods) + 1)
+            coinc = ", ".join(sorted(m.value for m in other_mods))
+            desc = ev.description
+            marker = f"[coincident with {coinc}"
+            if marker not in desc:
+                desc = f"{desc} [coincident with {coinc} within {window_seconds:.1f}s]"
+            fused.append(
+                replace(
+                    ev,
+                    score=fused_score,
+                    peak_score=min(99.0, max(ev.peak_score, fused_score)),
+                    tags=tags,
+                    features=features,
+                    description=desc,
+                )
+            )
+        else:
+            tags = list(ev.tags)
+            if "single" not in tags:
+                tags = tags + ["single"]
+            desc = ev.description
+            if "(single-modality)" not in desc:
+                desc = desc + " (single-modality)"
+            fused.append(replace(ev, tags=tags, description=desc))
 
-    # Dedup by id
-    final = []
-    for ev in fused:
-        if ev.event_id not in seen:
-            seen.add(ev.event_id)
-            final.append(ev)
-
-    final.sort(key=lambda e: (-e.score, e.start_time))
-    return final
-
-
-def _merge_cluster(cluster: List[AnomalyEvent], window: float) -> AnomalyEvent:
-    if len(cluster) == 1:
-        ev = cluster[0]
-        # Light boost for interesting single-modality events
-        boosted = AnomalyEvent(
-            event_id=ev.event_id,
-            modality=ev.modality,
-            start_time=ev.start_time,
-            duration=ev.duration,
-            score=min(99.0, ev.score * 1.0),
-            peak_score=min(99.0, ev.peak_score),
-            features=dict(ev.features),
-            description=ev.description + " (single-modality)",
-            file_path=ev.file_path,
-            frame_start=ev.frame_start,
-            frame_end=ev.frame_end,
-            channel=ev.channel,
-            tags=ev.tags + ["single"],
-            shape_description=ev.shape_description,
-            geometry=dict(ev.geometry) if ev.geometry else None,
-        )
-        return boosted
-
-    # True cross-modal cluster
-    start = min(e.start_time for e in cluster)
-    end = max(e.end_time for e in cluster)
-    duration = max(end - start, max(e.duration for e in cluster))
-
-    # Score fusion: max + small additive for each supporting modality
-    base = max(e.score for e in cluster)
-    modalities = {e.modality for e in cluster}
-    boost = 0.35 * (len(modalities) - 1) * base
-    fused_score = min(99.0, base + boost)
-
-    peak = max(e.peak_score for e in cluster)
-    desc_parts = [e.description for e in cluster]
-    desc = "CROSS-MODAL: " + " | ".join(desc_parts[:3])
-
-    tags = ["cross-modal"] + [m.value for m in modalities]
-
-    # Use the highest scoring event as primary carrier
-    primary = max(cluster, key=lambda e: e.score)
-    return AnomalyEvent(
-        event_id=primary.event_id,
-        modality=primary.modality,
-        start_time=start,
-        duration=duration,
-        score=fused_score,
-        peak_score=peak,
-        features={**primary.features, "supporting_modalities": len(modalities)},
-        description=desc,
-        file_path=primary.file_path,
-        frame_start=primary.frame_start,
-        frame_end=primary.frame_end,
-        channel=primary.channel,
-        tags=list(set(primary.tags + tags)),
-        shape_description=primary.shape_description,
-        geometry=dict(primary.geometry) if primary.geometry else None,
-    )
+    fused.sort(key=lambda e: (-e.score, e.start_time))
+    return fused

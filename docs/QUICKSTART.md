@@ -10,40 +10,55 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+For tests and linting: `pip install -r requirements-dev.txt`.
+
 Optional but recommended on Windows/macOS:
-- Install FFmpeg (https://ffmpeg.org) and ensure `ffmpeg` is on PATH.
+- Install FFmpeg (https://ffmpeg.org) and ensure `ffmpeg` is on PATH. Needed for some compressed audio/video containers.
 
 ## 2. Launch the GUI
 
 ```bash
-python -m judge.gui.main
+python -m judge
 # or
 python run_judge.py
+# or
+python -m judge.gui.main
 ```
 
 ## 3. Quick Validation with Synthetic Data
 
 ```bash
+python -m judge demo
+# or
 python examples/run_demo.py
 ```
 
 This will:
-- Generate 45 s of synthetic multi-modal data containing several injected transients
+- Generate synthetic multi-modal data containing injected transients
 - Run the full detection + fusion pipeline
 - Emit a technical PDF + Markdown + JSON report under `reports/`
 
-## 4. Using Your Own Data
+## 4. Headless analysis of your own files
+
+```bash
+python -m judge analyze observation.mp4 mic.wav mag.csv -o reports/night_01 --format all
+python -m judge analyze /data/field_kit --sensitivity 0.45 --min-duration 0.05
+```
+
+## 5. Using Your Own Data in the GUI
 
 - Click **+ Add Files** or **+ Add Folder**
-- Supported: MP4/MOV/AVI/MKV (video), WAV/FLAC/MP3/OGG (audio), CSV/JSON (sensor)
+- Supported: MP4/MOV/AVI/MKV/M4V (video), WAV/FLAC/MP3/OGG/M4A (audio), CSV/JSON (sensor)
 - Tune **Sensitivity**, **Min duration**, and **Cross-modal window**
-- Click **RUN ANALYSIS**
+- Click **RUN ANALYSIS** (Pause/Resume on the same button; Stop cancels after the current file)
 - Browse ranked events in the Events tab
 - Click any event for full technical attribution in the right panel
-- Use **Export Report** for a publication-grade PDF
-- Use **Export Clips** to obtain short annotated evidence segments around every detection
+- Use **Export Report** for PDF + Markdown + JSON
+- Use **Export Clips** to obtain short annotated evidence segments around detections
+- Use **Export Shapes** for a CSV catalog of video object geometries
+- **Hail Mary** re-runs analysis across 10 preset configs in a background thread
 
-## 5. Headless / Batch Scripting
+## 6. Headless / Batch Scripting
 
 ```python
 from judge.core.session import AnalysisSession

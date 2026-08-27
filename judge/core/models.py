@@ -6,7 +6,7 @@ modalities, and full analysis results.
 """
 
 from __future__ import annotations
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, fields
 from enum import Enum
 from typing import Any, Dict, List, Optional
 import json
@@ -31,7 +31,7 @@ class AnomalyEvent:
     duration: float    # seconds
     score: float       # composite anomaly score (higher = more anomalous)
     peak_score: float  # instantaneous peak within the event window
-    features: Dict[str, float]  # raw feature values that contributed
+    features: Dict[str, Any]  # raw feature values that contributed
     description: str   # technical, human-readable explanation
     file_path: str
     frame_start: Optional[int] = None  # for video
@@ -90,9 +90,14 @@ class AnalysisResult:
     def from_json(cls, path: str) -> "AnalysisResult":
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
+        event_field_names = {f.name for f in fields(AnomalyEvent)}
         events = []
         for ed in data.get("events", []):
-            ed["modality"] = Modality(ed["modality"])
-            events.append(AnomalyEvent(**ed))
-        data["events"] = events
-        return cls(**data)
+            payload = {k: v for k, v in ed.items() if k in event_field_names}
+            if "modality" in payload:
+                payload["modality"] = Modality(payload["modality"])
+            events.append(AnomalyEvent(**payload))
+        result_field_names = {f.name for f in fields(cls)}
+        result_payload = {k: v for k, v in data.items() if k in result_field_names}
+        result_payload["events"] = events
+        return cls(**result_payload)

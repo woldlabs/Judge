@@ -10,6 +10,8 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional, Callable
 from pathlib import Path
 import threading
+import time
+import uuid
 
 from judge.core.models import AnomalyEvent, Modality
 
@@ -40,7 +42,6 @@ class BaseDetector(ABC):
     def _check_pause(self, pause_event):
         if pause_event and pause_event.is_set():
             while pause_event.is_set():
-                import time
                 time.sleep(0.1)
 
     @abstractmethod
@@ -54,12 +55,11 @@ class BaseDetector(ABC):
         duration: float,
         score: float,
         peak_score: float,
-        features: Dict[str, float],
+        features: Dict[str, Any],
         description: str,
         file_path: Path,
         **extra,
     ) -> AnomalyEvent:
-        import uuid
         score = float(min(99.0, max(0.0, score)))
         peak_score = float(min(99.0, max(0.0, peak_score)))
         return AnomalyEvent(
@@ -79,3 +79,35 @@ class BaseDetector(ABC):
         """Map sensitivity into a decision threshold (higher sensitivity = lower threshold)."""
         # sensitivity 0.0 -> strict (high thresh), 1.0 -> loose (low thresh)
         return base * (1.6 - 1.1 * self.sensitivity)
+
+    @staticmethod
+    def _true_runs(mask, max_gap: int = 0):
+        """Return [start, end) index pairs of True runs, merging gaps of at most max_gap samples."""
+        n = len(mask)
+        runs = []
+        i = 0
+        max_gap = max(0, int(max_gap))
+        while i < n:
+            if not mask[i]:
+                i += 1
+                continue
+            start = i
+            end = i + 1
+            i += 1
+            while i < n:
+                if mask[i]:
+                    end = i + 1
+                    i += 1
+                    continue
+                gap = 0
+                j = i
+                while j < n and not mask[j] and gap < max_gap:
+                    j += 1
+                    gap += 1
+                if j < n and mask[j] and gap <= max_gap:
+                    i = j
+                    continue
+                break
+            runs.append((start, end))
+            i = max(i, end)
+        return runs

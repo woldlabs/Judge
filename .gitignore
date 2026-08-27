@@ -95,6 +95,7 @@ Thumbs.db
 reports/
 exports/
 temp_clips/
+demo_data/
 *.tmp
 session_*.json
 analysis_cache/

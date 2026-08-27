@@ -49,7 +49,7 @@ class DataIngestor:
 
     @staticmethod
     def detect_modality(path: Path) -> Optional[str]:
-        suffix = path.suffix.lower()
+        suffix = Path(path).suffix.lower()
         if suffix in SUPPORTED_VIDEO:
             return "video"
         if suffix in SUPPORTED_AUDIO:
@@ -60,6 +60,7 @@ class DataIngestor:
 
     @staticmethod
     def validate_file(path: Path) -> Tuple[bool, Optional[str]]:
+        path = Path(path)
         if not path.exists():
             return False, "File does not exist"
         if path.stat().st_size == 0:
@@ -72,6 +73,7 @@ class DataIngestor:
     @staticmethod
     def extract_metadata(path: Path) -> MediaMetadata:
         """Extract minimal metadata without loading full media into memory."""
+        path = Path(path)
         modality = DataIngestor.detect_modality(path)
         if modality is None:
             raise ValueError(f"Unsupported modality for {path}")
@@ -119,16 +121,30 @@ class DataIngestor:
 
     @staticmethod
     def _audio_metadata(path: Path) -> MediaMetadata:
-        import soundfile as sf
-        info = sf.info(str(path))
-        duration = info.duration
-        return MediaMetadata(
-            path=path,
-            modality="audio",
-            duration=duration,
-            sample_rate=info.samplerate,
-            channels=info.channels,
-        )
+        try:
+            import soundfile as sf
+            info = sf.info(str(path))
+            return MediaMetadata(
+                path=path,
+                modality="audio",
+                duration=float(info.duration),
+                sample_rate=int(info.samplerate),
+                channels=int(info.channels),
+            )
+        except Exception:
+            logger.info("soundfile could not read %s; falling back to librosa", path)
+            import librosa
+            duration = float(librosa.get_duration(path=str(path)))
+            _y, sr = librosa.load(str(path), sr=None, mono=False, duration=0.05)
+            channels = int(_y.shape[0]) if getattr(_y, "ndim", 1) > 1 else 1
+            return MediaMetadata(
+                path=path,
+                modality="audio",
+                duration=duration,
+                sample_rate=int(sr),
+                channels=channels,
+                extra={"decoder": "librosa"},
+            )
 
     @staticmethod
     def _sensor_metadata(path: Path) -> MediaMetadata:
@@ -139,17 +155,20 @@ class DataIngestor:
         if path.suffix.lower() == ".csv":
             # Peek without full load
             import pandas as pd
-            df = pd.read_csv(path, nrows=10000)
+            df = pd.read_csv(path, nrows=5000)
             # Try to find time column
             time_col = None
             for c in df.columns:
-                if c.lower() in {"t", "time", "timestamp", "seconds", "sec"}:
+                if str(c).lower() in {"t", "time", "timestamp", "seconds", "sec", "ts"}:
                     time_col = c
                     break
             if time_col is not None and len(df) > 1:
                 t = pd.to_numeric(df[time_col], errors="coerce").dropna()
                 if len(t) > 1:
                     duration = float(t.iloc[-1] - t.iloc[0])
+                tail_duration = DataIngestor._csv_tail_duration(path, time_col, t.iloc[0] if len(t) else None)
+                if tail_duration is not None:
+                    duration = tail_duration
             numeric_cols = df.select_dtypes(include=[np.number]).columns
             channels = len(numeric_cols)
         else:
@@ -178,6 +197,38 @@ class DataIngestor:
             sample_rate=sample_rate,
             extra={"inferred": True},
         )
+
+    @staticmethod
+    def _csv_tail_duration(path: Path, time_col: str, t0) -> Optional[float]:
+        """Estimate full duration from the last rows when the file is larger than the peek."""
+        try:
+            import pandas as pd
+            with open(path, "rb") as f:
+                f.seek(0, 2)
+                size = f.tell()
+                if size < 2048:
+                    return None
+                f.seek(max(0, size - 8192))
+                tail = f.read().decode("utf-8", errors="ignore")
+            lines = [ln for ln in tail.splitlines() if ln.strip()]
+            if not lines:
+                return None
+            header = None
+            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                header = f.readline()
+            if not header:
+                return None
+            from io import StringIO
+            blob = header + "\n".join(lines[-8:])
+            df_tail = pd.read_csv(StringIO(blob))
+            if time_col not in df_tail.columns:
+                return None
+            t_tail = pd.to_numeric(df_tail[time_col], errors="coerce").dropna()
+            if t0 is None or len(t_tail) == 0:
+                return None
+            return float(t_tail.iloc[-1] - float(t0))
+        except Exception:
+            return None
 
     @staticmethod
     def list_files_from_directory(directory: Path, recursive: bool = True) -> List[Path]:
