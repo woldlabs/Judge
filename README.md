@@ -6,6 +6,8 @@ Designed for researchers, field investigators, and data scientists working with 
 
 **Current version:** 0.2.0
 
+**Product vision / triage:** See [VISION.md](VISION.md) for purpose, non-goals, architecture boundaries, success metrics, and how Judge relates to Rift.
+
 ## Core Capabilities
 
 - **Multimodal Ingestion**: Native support for video (MP4, MOV, AVI, MKV, M4V), audio (WAV, FLAC, MP3, OGG, M4A, WMA), and multivariate time-series sensor data (CSV/JSON). Compressed audio falls back to librosa when soundfile cannot read the container.
