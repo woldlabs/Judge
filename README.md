@@ -121,7 +121,7 @@ See [docs/QUICKSTART.md](docs/QUICKSTART.md) for a longer walkthrough.
 3. **Analysis Execution** — Progress, live activity, ETA, Pause/Resume on the Run button, and Stop (finishes the current file then cancels).
 4. **Event Explorer** — Ranked catalog of candidate events. A post-run min-score filter hides weaker hits without re-running.
 5. **Visualization Canvas** — Time vs. score scatter colored by modality; selecting an event highlights it.
-6. **Action Bar** — Run; Export Report (PDF/MD/JSON); Export Clips; **Evidence Pack** (Judge→Rift zip: report + shapes + clips + README); Export Timeline (annotated PNG); Export Shapes (CSV catalog); Stop; Hail Mary (10 preset configs, background thread); Slidedeck.
+6. **Action Bar** — Run; Export Report (PDF/MD/JSON); Export Clips (evidence slices, with shape bbox overlays on video); Export Timeline (annotated PNG); Export Shapes (CSV catalog); Stop; Hail Mary (10 preset configs, background thread); Slidedeck. Evidence packs: use CLI `python -m judge evidence-pack` (see above).
 7. **Slidedeck** — Resizable window for browsing event stills. Frames are preloaded so navigation and maximize/expand stay responsive.
 
 ## Report Contents
