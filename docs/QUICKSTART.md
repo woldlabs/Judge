@@ -1,5 +1,7 @@
 # Quickstart Guide
 
+Product north star / triage: see [VISION.md](../VISION.md) (purpose, non-goals, architecture boundaries, success metrics, Judge↔Rift).
+
 ## 1. Installation
 
 ```bash
