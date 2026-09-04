@@ -19,7 +19,7 @@ Designed for researchers, field investigators, and data scientists working with 
 - **High-Precision Event Localization**: Sub-second (and frame-accurate for video) timestamping with quantitative metrics and human-readable technical descriptions.
 - **Object Shape Capture**: For video anomalies, extracts bounding boxes, area, aspect ratio, and a rough shape class (point-like / blob / streak). Shapes are saved in JSON, reports, and an exportable catalog CSV. Annotated clips overlay the boxes.
 - **Interactive Analysis GUI**: Dark-themed desktop interface with a ranked event catalog, timeline scatter, video frame preview, resizable slidedeck, Pause/Resume, Stop, and a background Hail Mary parameter sweep.
-- **CLI**: `python -m judge` launches the GUI. `python -m judge analyze`, `demo`, and `version` support headless workflows.
+- **CLI**: `python -m judge` launches the GUI. `python -m judge analyze`, `demo`, `evidence-pack`, and `version` support headless workflows.
 - **Automated Reporting**: PDF + Markdown + structured JSON with statistical summaries, ranked events, shape geometry, coincidence counts, and a reproducibility footer (package versions and git commit when available).
 - **Evidence Extraction**: Export short video/audio clips and sensor windows centered on detections. Video clips include shape overlays when geometry is present.
 - **Reproducible & Extensible**: Deterministic processing with seeded RNG where applicable. Detectors implement `BaseDetector`.
@@ -79,6 +79,26 @@ python -m judge demo --duration 20
 python -m judge version
 ```
 
+### Judge → Rift evidence pack (local-only)
+
+After analysis, export a single zip/folder for Rift’s Judge import path (`report.json` + `shapes.csv` + optional `clips/` + README with site lat/lon placeholders):
+
+```bash
+python -m judge analyze observation_night_01.mp4 -o reports/observation_night_01 --format json
+python -m judge evidence-pack reports/observation_night_01.json -o packs/site_A.zip --lat 40.71 --lon -74.0
+```
+
+In Rift, upload `report.json` from the pack (Upload / `/api/import_judge`). Clips and shapes are investigator archive. **Default is local-only** — packs may contain sensitive field media; do not share without review. No HOIC coupling.
+
+```python
+from judge.core.models import AnalysisResult
+from judge.reporting.evidence_pack import export_evidence_pack
+
+result = AnalysisResult.from_json("reports/observation_night_01.json")
+export_evidence_pack(result, "packs/site_A.zip", default_lat=40.71, default_lon=-74.0)
+```
+
+
 ```python
 from judge.core.session import AnalysisSession
 from judge.reporting.generator import generate_report
@@ -101,7 +121,7 @@ See [docs/QUICKSTART.md](docs/QUICKSTART.md) for a longer walkthrough.
 3. **Analysis Execution** — Progress, live activity, ETA, Pause/Resume on the Run button, and Stop (finishes the current file then cancels).
 4. **Event Explorer** — Ranked catalog of candidate events. A post-run min-score filter hides weaker hits without re-running.
 5. **Visualization Canvas** — Time vs. score scatter colored by modality; selecting an event highlights it.
-6. **Action Bar** — Run; Export Report (PDF/MD/JSON); Export Clips (evidence slices, with shape bbox overlays on video); Export Timeline (annotated PNG); Export Shapes (CSV catalog); Stop; Hail Mary (10 preset configs, background thread); Slidedeck.
+6. **Action Bar** — Run; Export Report (PDF/MD/JSON); Export Clips (evidence slices, with shape bbox overlays on video); Export Timeline (annotated PNG); Export Shapes (CSV catalog); Stop; Hail Mary (10 preset configs, background thread); Slidedeck. Evidence packs: use CLI `python -m judge evidence-pack` (see above).
 7. **Slidedeck** — Resizable window for browsing event stills. Frames are preloaded so navigation and maximize/expand stay responsive.
 
 ## Report Contents

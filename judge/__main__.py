@@ -5,6 +5,7 @@ Usage:
     python -m judge gui
     python -m judge analyze PATH... [--output reports/out] [--format all]
     python -m judge demo [--duration 20]
+    python -m judge evidence-pack REPORT.json [-o pack.zip] [--lat LAT] [--lon LON]
     python -m judge version
 """
 
@@ -92,6 +93,33 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
     return 0
 
 
+
+def _cmd_evidence_pack(args: argparse.Namespace) -> int:
+    from judge.core.models import AnalysisResult
+    from judge.reporting.evidence_pack import export_evidence_pack
+
+    report_path = Path(args.report)
+    if not report_path.is_file():
+        print(f"Report not found: {report_path}", file=sys.stderr)
+        return 1
+    result = AnalysisResult.from_json(str(report_path))
+    out = Path(args.output) if args.output else Path(f"evidence_pack_{result.session_id}.zip")
+    pack = export_evidence_pack(
+        result,
+        out,
+        default_lat=args.lat,
+        default_lon=args.lon,
+        include_clips=not args.no_clips,
+        clip_cap=args.clip_cap,
+        as_zip=not args.dir,
+    )
+    target = pack.zip_path or pack.pack_dir
+    print(f"Evidence pack: {target}")
+    print(f"  report.json events={len(result.events)} clips={pack.clips_exported} skipped={len(pack.clips_skipped)}")
+    print("  Local-only — upload report.json into Rift for judge pins.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="judge",
@@ -125,6 +153,28 @@ def build_parser() -> argparse.ArgumentParser:
     an_p.add_argument("--top", type=int, default=12, help="How many ranked events to print")
     an_p.add_argument("--no-recursive", action="store_true", help="Do not recurse into directories")
     an_p.set_defaults(func=_cmd_analyze)
+
+
+    ep_p = sub.add_parser(
+        "evidence-pack",
+        help="Export a local Judge→Rift evidence pack (report + shapes + clips + README)",
+    )
+    ep_p.add_argument("report", help="Path to Judge AnalysisResult JSON (from analyze/demo/report)")
+    ep_p.add_argument(
+        "-o",
+        "--output",
+        help="Output zip path (default: evidence_pack_<session>.zip) or directory with --dir",
+    )
+    ep_p.add_argument("--lat", type=float, default=None, help="Default site latitude for Rift pin placeholder")
+    ep_p.add_argument("--lon", type=float, default=None, help="Default site longitude for Rift pin placeholder")
+    ep_p.add_argument("--no-clips", action="store_true", help="Skip evidence clip extraction")
+    ep_p.add_argument("--clip-cap", type=int, default=30, help="Max clips to export (default 30)")
+    ep_p.add_argument(
+        "--dir",
+        action="store_true",
+        help="Write an unpacked directory instead of a zip",
+    )
+    ep_p.set_defaults(func=_cmd_evidence_pack)
 
     return parser
 
