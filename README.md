@@ -6,7 +6,7 @@ Designed for researchers, field investigators, and data scientists working with 
 
 **Current version:** 0.2.0
 
-**Product vision / triage:** See [VISION.md](VISION.md) for purpose, non-goals, architecture boundaries, success metrics, and how Judge relates to Rift.
+**Product vision / triage:** See [VISION.md](VISION.md) for purpose, non-goals, architecture boundaries, success metrics, and how Judge relates to Rift. **First-run path:** [docs/QUICKSTART.md](docs/QUICKSTART.md).
 
 ## Core Capabilities
 
