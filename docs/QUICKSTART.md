@@ -1,6 +1,6 @@
 # Quickstart Guide
 
-Product north star / triage: see [VISION.md](../VISION.md) (purpose, non-goals, architecture boundaries, success metrics, Judge↔Rift).
+Product north star / triage: see [VISION.md](../VISION.md) (purpose, non-goals, architecture boundaries, success metrics, Judge↔Rift). Issue triage checklist: [TRIAGE.md](TRIAGE.md).
 
 ## 1. Installation
 
