@@ -1,0 +1,56 @@
+name: Staging QA repro
+description: Staging-only QA repro for Judge — staging only, never production
+title: "[staging-qa]: "
+labels: ["staging-qa"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Staging only — never production.**
+
+        Use this form for Judge **staging** QA repros only. Do not file production incidents or production environment details here.
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Staging URL or staging env name (not production).
+      placeholder: e.g. https://staging.example / judge-staging
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps on staging.
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: expected-actual
+    attributes:
+      label: Expected vs actual
+      description: What you expected on staging, and what actually happened.
+      placeholder: |
+        Expected:
+        Actual:
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / Actions URL
+      description: Paste relevant logs or link a GitHub Actions run URL.
+      placeholder: https://github.com/woldlabs/Judge/actions/runs/...
+    validations:
+      required: false
+  - type: input
+    id: browser-client
+    attributes:
+      label: Browser / client (optional)
+      description: Browser, OS, or client used when reproducing on staging.
+      placeholder: e.g. Chrome 128 / macOS / CLI
+    validations:
+      required: false
