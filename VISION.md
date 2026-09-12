@@ -1,7 +1,7 @@
 # Vision — Judge
 
 ## Product purpose
-Judge (Joint Unconventional Data & Geophysical Examination) is a multimodal anomaly detection framework for identifying and characterizing statistically unusual or physically unconventional events in video, audio, and sensor datasets. It serves researchers, field investigators, and data scientists working observational recordings where transient, non-stationary, or cross-modal signatures may indicate rare phenomena.
+Judge (Joint Unconventional Data & Geophysical Examination) is a multimodal anomaly detection framework for identifying and characterizing statistically unusual or physically unconventional events in video, audio, and sensor datasets. It serves researchers, field investigators, and data scientists working with observational recordings where transient, non-stationary, or cross-modal signatures may indicate rare phenomena.
 
 Wold Labs north star: secure the future of humanity with innovative, practical, accessible solutions rooted in first principles. Judge contributes by turning raw multi-instrument recordings into explainable, reproducible anomaly candidates — extraordinary claims need extraordinary data hygiene.
 
@@ -21,7 +21,7 @@ Wold Labs north star: secure the future of humanity with innovative, practical, 
 
 ## Success metrics
 - pytest suite green on CI (Python 3.10–3.12) for every PR to main.
-- Headless `analyze` / `demo` / `version` CLI remain usable without GUI.
+- Headless `analyze` / `demo` / `evidence-pack` / `version` CLI remain usable without GUI.
 - Reports (PDF/MD/JSON) remain round-trippable and include reproducibility footer.
 - Cross-modal coincidences remain countable and tagged without collapsing supporting events.
 - New detectors implement `BaseDetector` without forking core session/fusion.

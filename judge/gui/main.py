@@ -67,14 +67,22 @@ class JudgeApp(ctk.CTk):
 
         # Wold Labs logo (with b64 fallback so it can live in the repo)
         try:
-            logo_path = Path(__file__).parent.parent.parent / "assets" / "woldlabs_logo.jpg"
-            if not logo_path.exists():
-                logo_path = Path("assets/woldlabs_logo.jpg")
-            if logo_path.exists():
+            here = Path(__file__).resolve()
+            logo_candidates = [
+                here.parents[2] / "assets" / "woldlabs_logo.jpg",  # repo checkout
+                Path("assets/woldlabs_logo.jpg"),
+                here.parents[1] / "assets" / "woldlabs_logo.jpg",
+            ]
+            logo_path = next((p for p in logo_candidates if p.is_file()), None)
+            if logo_path is not None:
                 pil_logo = Image.open(str(logo_path))
             else:
-                b64p = Path("assets/woldlabs_logo.b64")
-                if b64p.exists():
+                b64_candidates = [
+                    here.parents[2] / "assets" / "woldlabs_logo.b64",
+                    Path("assets/woldlabs_logo.b64"),
+                ]
+                b64p = next((p for p in b64_candidates if p.is_file()), None)
+                if b64p is not None:
                     import base64
                     from io import BytesIO
                     with open(str(b64p), "r") as f:

@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
+from pathlib import Path
 from typing import Dict, List, Set, Tuple
 
 MARKER = "<!-- judge-vision-risk-delta -->"
 VISION_BLOB = "https://github.com/woldlabs/Judge/blob/main/VISION.md"
+TRIAGE_BLOB = "https://github.com/woldlabs/Judge/blob/main/docs/TRIAGE.md"
 
 # (path prefixes or exact files, theme heading, anchor, label candidates that may exist)
 RULES: List[Tuple[Tuple[str, ...], str, str, Tuple[str, ...]]] = [
@@ -129,7 +130,7 @@ def render_comment(mapped: Dict[str, object]) -> str:
             "## VISION risk-delta (informational)\n\n"
             "No mapped VISION themes for touched paths (no-op).\n\n"
             "Comments/labels only — no approve/merge from this workflow.\n"
-            "See [`docs/TRIAGE.md`](../blob/main/docs/TRIAGE.md).\n"
+            f"See [`docs/TRIAGE.md`]({TRIAGE_BLOB}).\n"
         )
     lines = [
         MARKER,
@@ -149,7 +150,7 @@ def render_comment(mapped: Dict[str, object]) -> str:
         [
             "",
             "**Reminder:** comments and labels only — this workflow does **not** approve, "
-            "request-changes, or merge. Triage rubric: [`docs/TRIAGE.md`](https://github.com/woldlabs/Judge/blob/main/docs/TRIAGE.md).",
+            f"request-changes, or merge. Triage rubric: [`docs/TRIAGE.md`]({TRIAGE_BLOB}).",
             "",
             "Non-goals / counsel / HOIC blur are out of scope for this comment.",
             "",
@@ -179,7 +180,6 @@ def main(argv: List[str] | None = None) -> int:
     if args.json:
         print(json.dumps(mapped, indent=2))
     if args.comment_out:
-        Path = __import__("pathlib").Path
         Path(args.comment_out).write_text(render_comment(mapped), encoding="utf-8")
     elif not args.json:
         print(render_comment(mapped), end="")

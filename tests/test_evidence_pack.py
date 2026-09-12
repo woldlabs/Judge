@@ -134,6 +134,29 @@ def test_cli_evidence_pack_parser():
     assert args.no_clips is True
 
 
+def test_export_refuses_non_pack_directory(tmp_path):
+    result = _sample_result()
+    occupied = tmp_path / "not_a_pack"
+    occupied.mkdir()
+    (occupied / "notes.txt").write_text("keep me", encoding="utf-8")
+    try:
+        export_evidence_pack(result, occupied, include_clips=False, as_zip=False)
+        assert False, "expected ValueError for unrelated directory"
+    except ValueError as exc:
+        assert "non-pack" in str(exc)
+    assert (occupied / "notes.txt").is_file()
+
+
+def test_export_replaces_previous_pack(tmp_path):
+    result = _sample_result()
+    out = tmp_path / "pack_dir"
+    first = export_evidence_pack(result, out, include_clips=False, as_zip=False)
+    assert first.readme.is_file()
+    second = export_evidence_pack(result, out, include_clips=False, as_zip=False)
+    assert second.pack_dir.is_dir()
+    assert second.readme.is_file()
+
+
 def test_cli_evidence_pack_runs(tmp_path, capsys):
     result = _sample_result()
     report = tmp_path / "result.json"

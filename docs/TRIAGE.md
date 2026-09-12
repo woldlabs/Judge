@@ -7,7 +7,7 @@ Use this checklist when reviewing PRs or issues against [VISION.md](../VISION.md
 - [ ] **Purpose fit** — Does the change serve multimodal anomaly detection on video/audio/sensor observational data (explainable, reproducible candidates)?
 - [ ] **Non-goals** — Does it avoid: DL-black-box-as-primary path, geospatial/web-intel (Rift’s job), hosted SaaS scope, treating detections as confirmed phenomena, invented cybersecurity claims?
 - [ ] **Architecture boundaries** — Any change to `BaseDetector` / detector layout, cross-modal fusion (keep supporting detections; boost+tag coincidences), event/report JSON schema, conservative defaults, or CPU-only assumptions? If yes → needs explicit review, not drive-by edits.
-- [ ] **Success metrics** — Still green: CI pytest (3.10–3.12), headless CLI (`analyze`/`demo`/`version`), report round-trip + reproducibility footer, coincidence tagging without collapsing events, new detectors via `BaseDetector`.
+- [ ] **Success metrics** — Still green: CI pytest (3.10–3.12), headless CLI (`analyze`/`demo`/`evidence-pack`/`version`), report round-trip + reproducibility footer, coincidence tagging without collapsing events, new detectors via `BaseDetector`.
 - [ ] **Cross-repo (Judge ↔ Rift)** — Does this touch report/event schema or export shapes consumed by `rift/integrations/judge.py`? If yes, flag Rift follow-up risk before merge.
 
 ## PR quality (after vision fit)
