@@ -181,6 +181,10 @@ MIT License. See [LICENSE](LICENSE).
 
 Judge builds upon foundational techniques in statistical signal processing, robust statistics, and time-frequency analysis. Core dependencies include OpenCV, librosa, scikit-learn, NumPy/SciPy, pandas, matplotlib, customtkinter, and reportlab.
 
+## Authorized use
+
+Authorized for **observational use** only. All detections are statistical **candidates** — see [VISION.md](VISION.md#non-goals). Scope is anomaly detection on observational media/sensors; Judge does not invent cybersecurity product claims.
+
 ---
 
 **Judge** — Because extraordinary claims require extraordinary data hygiene.
