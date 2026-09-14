@@ -166,6 +166,7 @@ Contributions that improve detection rigor, add physically motivated features, o
 - Hail Mary runs in a background thread, can be paused/stopped, and no longer crashes on frozen event dataclasses when tagging sweep passes. Sweep results are a first-class `AnalysisResult` so reports and exports work afterwards.
 - Reports now include coincidence counts and a reproducibility footer (package versions, git commit when present). JSON load ignores unknown fields so older/newer result files round-trip.
 - Restored the Wold Labs logo assets used by the GUI.
+- Added `python -m judge evidence-pack` for a local Judge→Rift export (report + shapes + optional clips). Default is local-only; packs may contain sensitive field media.
 - Expanded unit/integration tests (fusion, models, ingestion, detectors, CLI) and added GitHub Actions CI.
 
 ### 0.1.0

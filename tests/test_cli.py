@@ -15,6 +15,10 @@ def test_parser_analyze_and_demo():
     assert demo.command == "demo"
     assert demo.duration == 12
 
+    pack = parser.parse_args(["evidence-pack", "out.json", "--no-clips"])
+    assert pack.command == "evidence-pack"
+    assert pack.no_clips is True
+
 
 def test_version_command(capsys):
     rc = main(["version"])

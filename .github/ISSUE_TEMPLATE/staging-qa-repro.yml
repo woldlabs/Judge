@@ -1,20 +1,20 @@
 name: Staging QA repro
 description: Staging-only QA repro for Judge — staging only, never production
 title: "[staging-qa]: "
-labels: ["staging-qa"]
+labels: ["bug"]
 body:
   - type: markdown
     attributes:
       value: |
         **Staging only — never production.**
 
-        Use this form for Judge **staging** QA repros only. Do not file production incidents or production environment details here.
+        Use this form for Judge **staging/lab** QA repros only. Judge is a local desktop + headless CLI analyzer (not a hosted production service). Do not file production incidents or production environment details here.
   - type: input
     id: environment
     attributes:
       label: Environment
-      description: Staging URL or staging env name (not production).
-      placeholder: e.g. https://staging.example / judge-staging
+      description: Staging/lab identifier only (not production). Judge is local/desktop — e.g. machine name, venv path, lab host, or a GitHub Actions run. Do not use a production URL.
+      placeholder: e.g. local venv on lab-pc / GitHub Actions run / judge-staging
     validations:
       required: true
   - type: textarea

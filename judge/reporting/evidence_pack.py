@@ -26,6 +26,35 @@ PACK_SCHEMA_VERSION = 1
 DEFAULT_CLIP_CAP = 30
 
 
+def _is_dangerous_pack_dir(path: Path) -> bool:
+    resolved = path.expanduser().resolve()
+    if resolved.parent == resolved:
+        return True
+    if resolved == Path.cwd().resolve():
+        return True
+    if resolved == Path.home().resolve():
+        return True
+    return False
+
+
+def _replace_pack_dir(pack_dir: Path) -> None:
+    """Create pack_dir, replacing a previous pack only — never cwd/root/home or an unrelated tree."""
+    if _is_dangerous_pack_dir(pack_dir):
+        raise ValueError(f"refusing to replace protected directory: {pack_dir}")
+    if pack_dir.exists():
+        if pack_dir.is_file():
+            raise ValueError(f"refusing to overwrite file: {pack_dir}")
+        contents = list(pack_dir.iterdir())
+        if contents:
+            looks_like_pack = (pack_dir / "pack_manifest.json").is_file() or (
+                pack_dir / "report.json"
+            ).is_file()
+            if not looks_like_pack:
+                raise ValueError(f"refusing to overwrite non-pack directory: {pack_dir}")
+        shutil.rmtree(pack_dir)
+    pack_dir.mkdir(parents=True, exist_ok=True)
+
+
 @dataclass
 class EvidencePackResult:
     """Paths produced by :func:`export_evidence_pack`."""
@@ -278,9 +307,7 @@ def export_evidence_pack(
         zip_path = None
         pack_dir = output
 
-    if pack_dir.exists():
-        shutil.rmtree(pack_dir)
-    pack_dir.mkdir(parents=True, exist_ok=True)
+    _replace_pack_dir(pack_dir)
     clips_dir = pack_dir / "clips"
     clips_dir.mkdir(exist_ok=True)
 

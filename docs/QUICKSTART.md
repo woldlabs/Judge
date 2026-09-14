@@ -45,12 +45,15 @@ This will:
 ```bash
 python -m judge analyze observation.mp4 mic.wav mag.csv -o reports/night_01 --format all
 python -m judge analyze /data/field_kit --sensitivity 0.45 --min-duration 0.05
+python -m judge evidence-pack reports/night_01.json -o packs/site_A.zip --lat 40.71 --lon -74.0
 ```
+
+`evidence-pack` is local-only (report.json + shapes.csv + optional clips). Upload `report.json` into Rift for `judge` pins. Packs may contain sensitive field media.
 
 ## 5. Using Your Own Data in the GUI
 
 - Click **+ Add Files** or **+ Add Folder**
-- Supported: MP4/MOV/AVI/MKV/M4V (video), WAV/FLAC/MP3/OGG/M4A (audio), CSV/JSON (sensor)
+- Supported: MP4/MOV/AVI/MKV/M4V (video), WAV/FLAC/MP3/OGG/M4A/WMA (audio), CSV/JSON (sensor)
 - Tune **Sensitivity**, **Min duration**, and **Cross-modal window**
 - Click **RUN ANALYSIS** (Pause/Resume on the same button; Stop cancels after the current file)
 - Browse ranked events in the Events tab
