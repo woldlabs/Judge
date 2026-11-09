@@ -6,6 +6,9 @@ Designed for researchers, field investigators, and data scientists working with 
 
 **Current version:** 0.2.0
 
+> **HOLD (pre-1.x.x):** Engine work is on HOLD. Current line is **0.2.0** (pre-1.x.x). No 1.x.x ship gate until HOLD clears. Hygiene-only changes welcome; no engine movement under this banner.
+
+
 **Product vision / triage:** See [VISION.md](VISION.md) for purpose, non-goals, architecture boundaries, success metrics, and how Judge relates to Rift. **First-run path:** [docs/QUICKSTART.md](docs/QUICKSTART.md).
 
 ## Core Capabilities
